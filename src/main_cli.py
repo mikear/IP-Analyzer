@@ -88,44 +88,68 @@ def main_cli() -> None:
 
     logger.info(f"\nIniciando análisis para '{args.input_file.name}'...")
     logger.info(f"Zona Horaria Objetivo: {args.timezone}")
-    results = process_ip_analysis(
+    
+    # --- Llamada a process_ip_analysis ---
+    results_wrapper = process_ip_analysis(
         args.input_file, args.timezone, gemini_key, ipinfo_token, progress_queue=None
     )
 
     print("\n--- Fin Log Detallado ---") # Separador visual
 
-    if results is None:
+    if results_wrapper is None:
         logger.critical("Análisis falló (revisar log anterior).")
         sys.exit(1)
-    elif not results:
+
+    analysis_results = results_wrapper.get("analysis_results", [])
+    analysis_metadata = results_wrapper.get("metadata", {})
+    
+    # Combinar metadatos de CLI y del análisis
+    final_metadata = analysis_metadata
+    final_metadata.update(metadata_dict)
+
+    if not analysis_results:
         logger.info("Análisis completado, sin IPs válidas encontradas.")
     else:
-        logger.logger.info(f"Análisis completado. {len(results)} IPs procesadas.")
+        logger.info(f"Análisis completado. {len(analysis_results)} IPs procesadas.")
         print("\n--- Informe Resumido (Consola) ---")
-        report_str = format_report(results, args.timezone, metadata_dict)
+        report_str = format_report(analysis_results, args.timezone, final_metadata)
         print(report_str)
 
         if args.output:
             base_path = args.output.resolve()
             logger.info(f"\nExportando informes a base: {base_path}...")
-            try: base_path.parent.mkdir(parents=True, exist_ok=True)
-            except OSError as dir_err: logger.critical(f"No se pudo crear dir salida: {base_path.parent}\n{dir_err}"); sys.exit(1)
+            try:
+                base_path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as dir_err:
+                logger.critical(f"No se pudo crear dir salida: {base_path.parent}\n{dir_err}")
+                sys.exit(1)
 
             export_errors = []
-            try: export_to_txt(base_path.with_suffix(".txt"), results, metadata_dict)
-            except Exception as e: export_errors.append(f"TXT: {e}")
-            try: export_to_csv(base_path.with_suffix(".csv"), results, metadata_dict)
-            except Exception as e: export_errors.append(f"CSV: {e}")
-            try: export_to_json(base_path.with_suffix(".json"), results, metadata_dict)
-            except Exception as e: export_errors.append(f"JSON: {e}")
-            try: export_to_pdf(base_path.with_suffix(".pdf"), results, metadata_dict)
-            except ImportError as imp_err: export_errors.append(f"PDF: {imp_err}")
-            except Exception as e: export_errors.append(f"PDF: {e}")
+            try:
+                export_to_txt(base_path.with_suffix(".txt"), analysis_results, final_metadata)
+            except Exception as e:
+                export_errors.append(f"TXT: {e}")
+            try:
+                export_to_csv(base_path.with_suffix(".csv"), analysis_results, final_metadata)
+            except Exception as e:
+                export_errors.append(f"CSV: {e}")
+            try:
+                export_to_json(base_path.with_suffix(".json"), analysis_results, final_metadata)
+            except Exception as e:
+                export_errors.append(f"JSON: {e}")
+            try:
+                export_to_pdf(base_path.with_suffix(".pdf"), analysis_results, final_metadata)
+            except ImportError as imp_err:
+                export_errors.append(f"PDF: {imp_err}")
+            except Exception as e:
+                export_errors.append(f"PDF: {e}")
 
-            if not export_errors: logger.info("Exportación completada.")
+            if not export_errors:
+                logger.info("Exportación completada.")
             else:
                 logger.warning("\nErrores durante la exportación:")
-                for err in export_errors: logger.warning(f"  - {err}")
+                for err in export_errors:
+                    logger.warning(f"  - {err}")
 
     logger.info("\n--- Fin del Script ---")
 

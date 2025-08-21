@@ -1,18 +1,17 @@
 import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog, Toplevel, font as tkFont
 import hashlib
 import os
 import subprocess
-from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog, Toplevel, font as tkFont
-import threading
-import sys
-import os
-import re
+from queue import Queue, Empty
 from pathlib import Path
-import webbrowser
+import sys
+import logging
+from logging import LogRecord
+import re
+import threading
 from datetime import datetime
-import traceback
-import logging  # Importar logging
-from logging import LogRecord, Handler  # Tipos específicos
+from typing import Optional # Added Optional import # Added datetime import # Added threading import # Added re import
 
 # --- Asegurar que el directorio del script esté en el path ---
 if getattr(sys, 'frozen', False):
@@ -20,7 +19,6 @@ if getattr(sys, 'frozen', False):
     script_dir = Path(sys._MEIPASS)
 else:
     # Running from source
-    from queue import Queue, Empty
     from typing import List, Dict, Any, Optional, Iterator
 
     script_dir = Path(__file__).parent.resolve()
@@ -64,7 +62,7 @@ except Exception as general_import_error:
 
 
 # --- Handler de Logging para la Cola de la GUI ---
-class QueueHandler(Handler):
+class QueueHandler(logging.Handler):
     """Handler que pone LogRecords en una cola Queue."""
     def __init__(self, log_queue: Queue):
         super().__init__()
