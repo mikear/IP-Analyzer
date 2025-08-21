@@ -28,6 +28,9 @@ export/
 # Directorio de salida de Inno Setup
 Output/
 
+# Directorios temporales
+temp_unzip/
+
 # Archivos de dependencias (si se usan otras herramientas)
 .pytest_cache/
 .mypy_cache/
