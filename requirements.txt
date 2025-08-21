@@ -1,0 +1,8 @@
+google-generativeai
+requests
+python-dotenv
+python-docx
+python-dateutil
+fpdf2
+pytz
+PySide6

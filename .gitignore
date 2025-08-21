@@ -1,0 +1,42 @@
+# Entornos virtuales
+venv/
+.venv/
+env/
+.env
+
+# Archivos de configuración de IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cache de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Artefactos de compilación y distribución
+build/
+dist/
+*.spec
+*.egg-info/
+/ip_analyzer_gui.spec
+
+# Directorio de exportación de informes
+export/
+
+# Directorio de salida de Inno Setup
+Output/
+
+# Archivos de dependencias (si se usan otras herramientas)
+.pytest_cache/
+.mypy_cache/
+.tox/
+pip-wheel-metadata/
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de backup
+*.zip

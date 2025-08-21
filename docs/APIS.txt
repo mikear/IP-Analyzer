@@ -1,0 +1,5 @@
+GEMINI_API_KEY=AIzaSyAfKpAS52kU3AC83e8k_5Gy3jvvvtSltW4
+IPINFO_TOKEN=d03286f5538ff5
+
+
+pyinstaller --onefile --windowed --icon=app_icon.ico --add-data "ABOUT.txt:." --add-data "manual.txt:." --add-data ".env:." ip_analyzer_gui.py
