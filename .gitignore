@@ -22,8 +22,7 @@ dist/
 *.egg-info/
 /ip_analyzer_gui.spec
 
-# Directorio de exportación de informes
-export/
+
 
 # Directorio de salida de Inno Setup
 Output/
