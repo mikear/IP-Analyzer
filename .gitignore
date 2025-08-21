@@ -43,3 +43,6 @@ Thumbs.db
 
 # Archivos de backup
 *.zip
+
+# Documentación
+APIS.txt
