@@ -1,5 +1,5 @@
 # IP Analyzer con IA 🤖
-![IP Analyzer Banner](assets/imagenes/banner.jpg)
+![IP Analyzer Banner](assets/imagenes/banner-github.png)
 
 Herramienta de escritorio y línea de comandos para la extracción, análisis y enriquecimiento de direcciones IP desde diversas fuentes de texto. Utilizando la potencia de la IA de Google Gemini para la extracción de datos y la API de ipinfo.io para el enriquecimiento, esta aplicación permite a investigadores y analistas procesar grandes volúmenes de texto y generar informes detallados de manera eficiente.
 
