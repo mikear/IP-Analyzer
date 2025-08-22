@@ -46,11 +46,11 @@ Esta herramienta es un proyecto de código abierto. Si te resulta útil, conside
 **Interfaz Principal**
 ![Interfaz Principal](assets/screenshots/main-window.png)
 
-**Resultados del Análisis**
-![Resultados del Análisis](assets/screenshots/unestructured-log.png)
+**Ejemplo de Datos de Entrada**
+![Ejemplo de Datos de Entrada](assets/screenshots/unestructured-log.png)
 
-**Modelo de Informe**
-![Informe PDF](assets/screenshots/report-model.png)
+**Resultado del Análisis**
+![Resultado del Análisis](assets/screenshots/report-model.png)
 
 ## 📋 Ejemplo de Informe
 
