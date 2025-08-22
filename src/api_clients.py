@@ -2,7 +2,7 @@ import logging
 import ipaddress
 import json
 import re
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 import requests
 import google.generativeai as genai
@@ -11,6 +11,41 @@ from config import IPINFO_URL
 
 logger = logging.getLogger(__name__)
 
+def validate_api_keys(gemini_key: Optional[str], ipinfo_token: Optional[str]) -> Tuple[bool, bool]:
+    """Valida las claves API de Gemini e ipinfo.io."""
+    gemini_ok = False
+    ipinfo_ok = False
+
+    # Validar Gemini API Key
+    if gemini_key:
+        try:
+            genai.configure(api_key=gemini_key)
+            # Realizar una llamada de prueba para validar la clave
+            model = genai.GenerativeModel("gemini-1.5-flash-latest")
+            model.generate_content(
+                "test", 
+                generation_config=genai.types.GenerationConfig(max_output_tokens=1),
+                request_options={"timeout": 10}
+            )
+            gemini_ok = True
+            logger.info("Clave API de Gemini validada exitosamente.")
+        except Exception as e:
+            logger.error(f"Error al validar la clave API de Gemini: {e}")
+
+    # Validar ipinfo.io Token
+    if ipinfo_token:
+        try:
+            # Realizar una llamada a un endpoint de prueba o a una IP conocida
+            response = requests.get(f"https://ipinfo.io/8.8.8.8?token={ipinfo_token}", timeout=10)
+            if response.status_code == 200:
+                ipinfo_ok = True
+                logger.info("Token de ipinfo.io validado exitosamente.")
+            else:
+                logger.error(f"Error al validar el token de ipinfo.io. Código de estado: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error de red al validar el token de ipinfo.io: {e}")
+
+    return gemini_ok, ipinfo_ok
 
 def is_valid_ip(ip_str: str) -> bool:
     """Verifica si una cadena es una dirección IP válida (IPv4 o IPv6)."""

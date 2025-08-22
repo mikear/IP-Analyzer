@@ -98,24 +98,62 @@ class ApiKeyDialog(Toplevel):
         button_frame = ttk.Frame(frame); button_frame.grid(row=2, column=0, columnspan=3, pady=(15, 5))
         accent_style = 'Accent.TButton' if 'Accent.TButton' in self.winfo_toplevel().tk.call('ttk::style', 'map', 'TButton') else 'TButton'
         ttk.Button(button_frame, text="Guardar y Cerrar", command=self._save, style=accent_style).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="Probar Claves", command=self._test_keys).pack(side=tk.LEFT, padx=10)
         ttk.Button(button_frame, text="Cancelar", command=self.destroy).pack(side=tk.LEFT, padx=10)
         self.update_idletasks(); parent_x = parent.winfo_rootx(); parent_y = parent.winfo_rooty()
         parent_width = parent.winfo_width(); parent_height = parent.winfo_height()
         dialog_width = self.winfo_width(); dialog_height = self.winfo_height()
         x = parent_x + (parent_width // 2) - (dialog_width // 2); y = parent_y + (parent_height // 2) - (dialog_height // 2)
-        self.geometry(f"{x}+{y}"); gemini_entry.focus_set(); self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}"); gemini_entry.focus_set(); self.protocol("WM_DELETE_WINDOW", self.destroy)
 
     def _toggle_visibility(self, entry_widget: ttk.Entry, show_var: tk.BooleanVar):
         entry_widget.config(show="" if show_var.get() else "*")
 
+    def _test_keys(self):
+        gemini_key = self.gemini_key_var.get().strip()
+        ipinfo_token = self.ipinfo_token_var.get().strip()
+
+        if not gemini_key and not ipinfo_token:
+            messagebox.showwarning("Claves no introducidas", "Por favor, introduzca al menos una clave API para probar.", parent=self)
+            return
+
+        self.config(cursor="wait")
+        self.update_idletasks()
+
+        gemini_ok, ipinfo_ok = api_clients.validate_api_keys(gemini_key, ipinfo_token)
+
+        self.config(cursor="")
+
+        if gemini_key and not gemini_ok:
+            messagebox.showerror("Error de clave Gemini", "La clave de la API de Gemini no es válida.", parent=self)
+        elif ipinfo_token and not ipinfo_ok:
+            messagebox.showerror("Error de token de ipinfo", "El token de la API de ipinfo.io no es válido.", parent=self)
+        elif gemini_ok or ipinfo_ok:
+            messagebox.showinfo("Éxito", "Una o más claves de API se han validado correctamente.", parent=self)
+        else:
+            messagebox.showerror("Error de validación", "Ninguna de las claves de API proporcionadas es válida.", parent=self)
+
     def _save(self):
-        gemini = self.gemini_key_var.get().strip(); ipinfo = self.ipinfo_token_var.get().strip()
-        if not gemini or not ipinfo: messagebox.showwarning("Campos Vacíos", "Ambas claves API son necesarias.", parent=self); return
+        gemini = self.gemini_key_var.get().strip()
+        ipinfo = self.ipinfo_token_var.get().strip()
+
+        if not gemini and not ipinfo:
+            messagebox.showwarning("Campos Vacíos", "Debe proporcionar al menos una clave API.", parent=self)
+            return
+
         try:
-            save_successful = config.save_api_keys(gemini, ipinfo)
-            if save_successful: self.result = {"gemini": gemini, "ipinfo": ipinfo}; self.destroy()
-            else: messagebox.showerror("Error al Guardar", "No se pudieron guardar claves API en .env.", parent=self)
-        except Exception as e: messagebox.showerror("Error Inesperado al Guardar", f"Ocurrió un error:\n{e}", parent=self); logging.getLogger(__name__).error("Error guardando claves (diálogo)", exc_info=True)
+            # Guardar las claves que el usuario haya proporcionado
+            save_successful = config.save_api_keys(gemini_key=gemini, ipinfo_token=ipinfo)
+            
+            if save_successful:
+                self.result = {"gemini": gemini, "ipinfo": ipinfo}
+                self.destroy()
+            else:
+                messagebox.showerror("Error al Guardar", "No se pudieron guardar las claves API en el archivo .env.", parent=self)
+
+        except Exception as e:
+            messagebox.showerror("Error Inesperado al Guardar", f"Ocurrió un error:\n{e}", parent=self)
+            logging.getLogger(__name__).error("Error guardando claves (diálogo)", exc_info=True)
 
 
 # --- Clase Principal de la GUI ---
@@ -684,38 +722,66 @@ class IPAnalyzerApp(tk.Tk):
             return None
 
     def _start_analysis_thread(self) -> None:
-        if self.is_processing.get(): messagebox.showwarning("Análisis en Curso", "Ya hay un análisis en proceso.", parent=self); return
+        if self.is_processing.get():
+            messagebox.showwarning("Análisis en Curso", "Ya hay un análisis en proceso.", parent=self)
+            return
+
         filepath_str = self.input_file_path.get()
-        if not filepath_str: messagebox.showerror("Archivo No Seleccionado", "Selecciona un archivo.", parent=self); return
+        if not filepath_str:
+            messagebox.showerror("Archivo No Seleccionado", "Por favor, seleccione un archivo de entrada.", parent=self)
+            return
+
         filepath = Path(filepath_str)
-        if not filepath.is_file(): messagebox.showerror("Error de Archivo", f"Archivo inválido:\n{filepath}", parent=self); return
-        if not self.api_keys_loaded: messagebox.showerror("Configuración Requerida", "Claves API no cargadas.", parent=self); return
+        if not filepath.is_file():
+            messagebox.showerror("Error de Archivo", f"El archivo seleccionado no es válido:\n{filepath}", parent=self)
+            return
 
-        display_timezone = self.timezone.get(); backend_timezone = self._map_display_tz_to_backend(display_timezone)
+        if not self.gemini_key and not self.ipinfo_token:
+            messagebox.showerror("Configuración Requerida", "No se han cargado las claves API. Por favor, configúrelas en el menú Archivo.", parent=self)
+            return
 
-        # Calculate SHA256 hash of the input file
+        # Validar las claves API antes de iniciar el análisis
+        self.config(cursor="wait")
+        self.update_idletasks()
+        gemini_ok, ipinfo_ok = api_clients.validate_api_keys(self.gemini_key, self.ipinfo_token)
+        self.config(cursor="")
+
+        # Comprobar si las claves necesarias están disponibles y son válidas
+        if self.gemini_key and not gemini_ok:
+            messagebox.showerror("Error de clave de Gemini", "La clave de la API de Gemini no es válida. Por favor, corríjala en el menú Archivo.", parent=self)
+            return
+        if self.ipinfo_token and not ipinfo_ok:
+            messagebox.showerror("Error de token de ipinfo", "El token de la API de ipinfo.io no es válido. Por favor, corríjalo en el menú Archivo.", parent=self)
+            return
+
+        display_timezone = self.timezone.get()
+        backend_timezone = self._map_display_tz_to_backend(display_timezone)
+
         file_hash = self._calculate_file_hash(filepath)
         if file_hash is None:
             messagebox.showerror("Error de Hash", "No se pudo calcular el hash del archivo de entrada.", parent=self)
             return
 
-        self._set_processing_state(True); self.update_status("Iniciando análisis...", "blue")
-        self._clear_treeview(); self._clear_log()
-        if hasattr(self, 'progress_bar'): self.progress_bar['value'] = 0
+        self._set_processing_state(True)
+        self.update_status("Iniciando análisis...", "blue")
+        self._clear_treeview()
+        self._clear_log()
+        if hasattr(self, 'progress_bar'):
+            self.progress_bar['value'] = 0
         self.update_idletasks()
 
-        # Configurar logger backend para enviar a cola GUI
         backend_logger = logging.getLogger(processing.__name__)
         if self.log_queue_handler and self.log_queue_handler not in backend_logger.handlers:
             backend_logger.addHandler(self.log_queue_handler)
             if backend_logger.level == logging.NOTSET or backend_logger.level > logging.DEBUG:
-                 backend_logger.setLevel(logging.DEBUG) # Capturar todo para GUI
-            logging.getLogger('GUI').info(f"Handler log GUI añadido a logger backend '{processing.__name__}'. Nivel backend: {backend_logger.getEffectiveLevel()}")
+                backend_logger.setLevel(logging.DEBUG)
+            logging.getLogger('GUI').info(f"Handler de registro de la GUI añadido al logger del backend '{processing.__name__}'. Nivel del backend: {backend_logger.getEffectiveLevel()}")
 
-        logging.getLogger('GUI').info(f"Iniciando hilo análisis: {filepath.name}, TZ Backend: {backend_timezone}")
+        logging.getLogger('GUI').info(f"Iniciando hilo de análisis para: {filepath.name}, Zona Horaria del Backend: {backend_timezone}")
         self.analysis_thread = threading.Thread(
             target=self._analysis_task,
-            args=(filepath, backend_timezone, self.log_queue_handler, file_hash, self.title()), daemon=True # Pass file_hash and app_version
+            args=(filepath, backend_timezone, self.log_queue_handler, file_hash, self.title()),
+            daemon=True
         )
         self.analysis_thread.start()
         self.after(100, self._check_progress_queue)

@@ -33,15 +33,15 @@ def get_dotenv_path() -> Path:
     )
     return env_path_script
 
-def load_config() -> Tuple[Optional[str], Optional[str]]:
+def load_config() -> Tuple[str, str]:
     """Carga las claves API desde el archivo .env encontrado."""
     if not _dotenv_available:
         logger.error("Falta 'python-dotenv'. No se pueden cargar claves API.")
-        return None, None
+        return "", ""
     env_path = get_dotenv_path()
     load_dotenv(dotenv_path=env_path, override=True)
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    ipinfo_token = os.getenv("IPINFO_TOKEN")
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    ipinfo_token = os.getenv("IPINFO_TOKEN", "")
     if env_path.is_file():
         logger.info(f"Configuración cargada desde: {env_path}")
     else:
@@ -56,8 +56,10 @@ def save_api_keys(gemini_key: str, ipinfo_token: str) -> bool:
     env_path = get_dotenv_path()
     try:
         env_path.parent.mkdir(parents=True, exist_ok=True)
-        set_key(str(env_path), "GEMINI_API_KEY", gemini_key, quote_mode="never")
-        set_key(str(env_path), "IPINFO_TOKEN", ipinfo_token, quote_mode="never")
+        if gemini_key:
+            set_key(str(env_path), "GEMINI_API_KEY", gemini_key, quote_mode="never")
+        if ipinfo_token:
+            set_key(str(env_path), "IPINFO_TOKEN", ipinfo_token, quote_mode="never")
         logger.info(f"Claves API guardadas/actualizadas en: {env_path}")
         return True
     except Exception as e:
