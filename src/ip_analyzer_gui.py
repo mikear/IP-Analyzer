@@ -275,6 +275,10 @@ class IPAnalyzerApp(tk.Tk):
         file_menu.add_command(label="Exportar Informe...", command=self._export_report, state=tk.DISABLED)
         file_menu.add_separator(); file_menu.add_command(label="Salir", command=self._on_closing)
         self.file_menu = file_menu
+
+        help_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.menu_bar.add_cascade(label="Ayuda", menu=help_menu)
+        help_menu.add_command(label="Acerca de...", command=self._show_about_dialog)
         
         
 
@@ -370,7 +374,19 @@ class IPAnalyzerApp(tk.Tk):
         if self.api_keys_loaded: messagebox.showinfo("Recarga Exitosa", ".env recargado.", parent=self)
         else: messagebox.showwarning("Recarga Fallida", f"No se encontraron claves en {config.get_dotenv_path()}", parent=self)
 
-    
+    def _show_about_dialog(self) -> None:
+        """Muestra información sobre la aplicación."""
+        app_version = self.title().replace("IP Analyzer ", "")
+        messagebox.showinfo(
+            "Acerca de IP Analyzer",
+            f"IP Analyzer {app_version}\n\n"
+            "Herramienta para el análisis y enriquecimiento de direcciones IP.\n"
+            "Desarrollado por Diego A. Rábalo.\n\n"
+            "© 2024-2025. Todos los derechos reservados.\n"
+            "Licencia MIT.\n\n"
+            "Utiliza Google Gemini para extracción de IPs y ipinfo.io para geolocalización.",
+            parent=self
+        )
 
     def _export_report(self) -> None:
         if not self.full_results: messagebox.showwarning("Sin Datos", "No hay resultados para exportar.", parent=self); return
