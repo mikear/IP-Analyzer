@@ -40,15 +40,14 @@ def load_config() -> Tuple[str, str]:
         return "", ""
     env_path = get_dotenv_path()
     load_dotenv(dotenv_path=env_path, override=True)
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
     ipinfo_token = os.getenv("IPINFO_TOKEN", "")
     if env_path.is_file():
         logger.info(f"Configuración cargada desde: {env_path}")
     else:
         logger.warning(f"No se encontró archivo .env en {env_path} o directorios sup.")
-    return gemini_key, ipinfo_token
+    return "", ipinfo_token
 
-def save_api_keys(gemini_key: str, ipinfo_token: str) -> bool:
+def save_api_keys(gemini_key: str = "", ipinfo_token: str = "") -> bool:
     """Guarda o actualiza las claves API en el archivo .env encontrado/designado."""
     if not _dotenv_available:
         logger.error("Falta 'python-dotenv'. No se pueden guardar claves API.")
@@ -56,8 +55,6 @@ def save_api_keys(gemini_key: str, ipinfo_token: str) -> bool:
     env_path = get_dotenv_path()
     try:
         env_path.parent.mkdir(parents=True, exist_ok=True)
-        if gemini_key:
-            set_key(str(env_path), "GEMINI_API_KEY", gemini_key, quote_mode="never")
         if ipinfo_token:
             set_key(str(env_path), "IPINFO_TOKEN", ipinfo_token, quote_mode="never")
         logger.info(f"Claves API guardadas/actualizadas en: {env_path}")

@@ -63,12 +63,9 @@ def main_cli() -> None:
     args = parser.parse_args()
 
     logger.info("Cargando configuración desde .env...")
-    gemini_key, ipinfo_token = load_config()
-    if not gemini_key or not ipinfo_token:
-        logger.critical("Error Crítico: Faltan claves API en .env.")
-        logger.critical(f"Asegúrate de que existan en: {get_dotenv_path()}")
-        sys.exit(1)
-    logger.info("Claves API cargadas.")
+    _, ipinfo_token = load_config()
+    if not ipinfo_token:
+        logger.warning("Aviso: Token API IPInfo no configurado en .env. El análisis se ejecutará en modo local sin geolocalización enriquecida.")
 
     metadata_dict = {}
     if args.meta:
@@ -91,7 +88,10 @@ def main_cli() -> None:
     
     # --- Llamada a process_ip_analysis ---
     results_wrapper = process_ip_analysis(
-        args.input_file, args.timezone, gemini_key, ipinfo_token, progress_queue=None
+        input_filepath=args.input_file,
+        target_timezone=args.timezone,
+        ipinfo_token=ipinfo_token,
+        progress_queue=None
     )
 
     print("\n--- Fin Log Detallado ---") # Separador visual

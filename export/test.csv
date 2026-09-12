@@ -1,0 +1,7 @@
+﻿# --- Metadatos ---
+# Versión de la Aplicación: IP Analyzer v2.2
+# Investigador: Diego Rabalo
+# ---
+
+orden,ip_address,raw_timestamp_str,timestamp_utc,timestamp_converted,isp,city,region,country,hostname,location,ip_info_error
+1,8.8.8.8,2024-08-21 10:00:00 UTC,2024-08-21 10:00:00 UTC,2024-08-21 10:00:00 UTC,Google LLC,Mountain View,N/A,US,N/A,"Mountain View, US",
