@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "investigador": "Diego Rabalo",
+    "app_version": "IP Analyzer v2.2"
+  },
+  "results": [
+    {
+      "orden": 1,
+      "ip_address": "8.8.8.8",
+      "raw_timestamp_str": "2024-08-21 10:00:00 UTC",
+      "timestamp_utc": "2024-08-21 10:00:00 UTC",
+      "timestamp_converted": "2024-08-21 10:00:00 UTC",
+      "isp": "Google LLC",
+      "city": "Mountain View",
+      "region": "N/A",
+      "country": "US",
+      "hostname": "N/A",
+      "location": "Mountain View, US",
+      "ip_info_error": null
+    }
+  ]
+}
