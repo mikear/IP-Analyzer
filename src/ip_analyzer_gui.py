@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from PySide6.QtCore import Qt, QThread, Signal, QObject
-from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QAction, QColor, QIcon, QPixmap, QPainter, QColor as QCol
+from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QAction, QColor, QIcon
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QPushButton, QComboBox,
@@ -28,66 +28,34 @@ import processing
 
 logger = logging.getLogger(__name__)
 
-
-def _make_icon(svg_path_data: str, color: str = "#3B82F6", size: int = 48) -> QIcon:
-    """Create a QIcon from an SVG path string with proper scaling."""
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="{size}" height="{size}">
-      <path fill="{color}" d="{svg_path_data}"/>
-    </svg>'''
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
-    loader = QPixmap()
-    loader.loadFromData(svg.encode('utf-8'))
-    painter = QPainter(pixmap)
-    painter.drawPixmap(0, 0, size, size, loader)
-    painter.end()
-    return QIcon(pixmap)
+# Icons populated after QApplication in main()
+ICONS = {}
 
 
-class _Icons:
-    """Lazy icon loader - creates icons on first access."""
-    _cache = {}
-
-    @staticmethod
-    def _get(key, svg, color):
-        if key not in _Icons._cache:
-            _Icons._cache[key] = _make_icon(svg, color)
-        return _Icons._cache[key]
-
-    @staticmethod
-    def eye(): return _Icons._get('eye', 'M256 32C132.3 32 32 132.3 32 256s100.3 224 224 224 224-100.3 224-224S379.7 32 256 32zm0 384c-88.4 0-160-71.6-160-160S167.6 96 256 96s160 71.6 160 160-71.6 160-160 160zm0-256c-53 0-96 43-96 96s43 96 96 96 96-43 96-96-43-96-96-96z', '#475569')
-    @staticmethod
-    def eye_slash(): return _Icons._get('eye_slash', 'M256 32C132.3 32 32 132.3 32 256s100.3 224 224 224 224-100.3 224-224S379.7 32 256 32zm0 384c-88.4 0-160-71.6-160-160S167.6 96 256 96s160 71.6 160 160-71.6 160-160 160zm0-256c-53 0-96 43-96 96s43 96 96 96 96-43 96-96-43-96-96-96z', '#475569')
-    @staticmethod
-    def plug(): return _Icons._get('plug', 'M352 32H160c-17.7 0-32 14.3-32 32v64h128V96h96v256h-32V192h-96v64H160v-64c0-17.7 14.3-32 32-32h160c17.7 0 32 14.3 32 32v224c0 17.7-14.3 32-32 32H160c-17.7 0-32-14.3-32-32V352H64c-17.7 0-32-14.3-32-32V64C32 46.3 46.3 32 64 32h288c17.7 0 32 14.3 32 32v224c0 17.7-14.3 32-32 32h-32v64h32c35.3 0 64-28.7 64-64V64c0-17.7-14.3-32-32-32z', '#475569')
-    @staticmethod
-    def save(): return _Icons._get('save', 'M288 32H192c-17.7 0-32 14.3-32 32v64H96c-17.7 0-32 14.3-32 32v288c0 17.7 14.3 32 32 32h288c17.7 0 32-14.3 32-32V128c0-17.7-14.3-32-32-32h-32V64c0-17.7-14.3-32-32-32zm-32 0v64h96V64h-96zM192 384V224h128v160H192z', '#FFFFFF')
-    @staticmethod
-    def folder_open(): return _Icons._get('folder_open', 'M448 480H192c-17.7 0-32-14.3-32-32V164.6c0-9.7 5.5-18.4 14.1-22.7l128-64c7.8-3.9 17.2-1.5 21.6 5.1L448 160v320c0 17.7-14.3 32-32 32zM64 480H32c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h32l48-32h160l48 32h32c17.7 0 32 14.3 32 32v32H64v288z', '#3B82F6')
-    @staticmethod
-    def file(): return _Icons._get('file', 'M320 448v40c0 13.3-10.7 24-24 24H72c-13.3 0-24-10.7-24-24V120c0-13.3 10.7-24 24-24h224v40c0 26.5 21.5 48 48 48h40zM256 0C119 0 8 111 8 248v224c0 13.3 10.7 24 24 24h32c13.3 0 24-10.7 24-24V248c0-97 79-176 176-176h32V0L256 0zm240 320h-32c-44.2 0-80 35.8-80 80v32c0 13.3 10.7 24 24 24h72c13.3 0 24-10.7 24-24v-32c0-8.8-7.2-16-16-16z', '#3B82F6')
-    @staticmethod
-    def globe(): return _Icons._get('globe', 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256 256-114.6 256-256S391.4 0 256 0zm164.5 388.5c-15 15-35.4 23.5-56.5 23.5h-21.6c-2.8-18.5-11.3-35.8-24.2-49.3l10.5-10.5c6.2-6.2 6.2-16.4 0-22.6l-22.6-22.6c-6.2-6.2-16.4-6.2-22.6 0l-14.9 14.9c-16.8-8-35-11.5-53.5-11.5h-5.8c-27 0-52.6 10.5-71.8 29.7L133.3 231c-6.2-6.2-16.4-6.2-22.6 0L88.1 253.6c-6.2 6.2-6.2 16.4 0 22.6l25.7 25.7c-8 16.8-11.5 35-11.5 53.5v5.8c0 27 10.5 52.6 29.7 71.8l-17.2 17.2c-6.2 6.2-6.2 16.4 0 22.6l22.6 22.6c6.2 6.2 16.4 6.2 22.6 0l17.2-17.2c19.2 19.2 44.8 29.7 71.8 29.7h5.8c18.5 0 36.7-3.5 53.5-11.5l-14.9 14.9c-6.2 6.2-6.2 16.4 0 22.6l22.6 22.6c6.2 6.2 16.4 6.2 22.6 0l25.7-25.7c6.2-6.2 6.2-16.4 0-22.6l-17.2-17.2c19.2-19.2 29.7-44.8 29.7-71.8v-5.8c0-21.1-8.5-41.5-23.5-56.5l-10.5 10.5c-13.5 13.5-30.8 22-49.3 24.2V256c0-8.8-7.2-16-16-16s-16 7.2-16 16v42.3c-18.5-2.2-35.8-10.7-49.3-24.2l-10.5 10.5c-15 15-35.4 23.5-56.5 23.5h-21.6c-2.8-18.5-11.3-35.8-24.2-49.3l10.5-10.5c6.2-6.2 6.2-16.4 0-22.6l-22.6-22.6c-6.2-6.2-16.4-6.2-22.6 0l-14.9 14.9c-16.8-8-35-11.5-53.5-11.5h-5.8c-27 0-52.6 10.5-71.8 29.7L79 231c-6.2-6.2-16.4-6.2-22.6 0L33.8 253.6c-6.2 6.2-6.2 16.4 0 22.6l25.7 25.7c-8 16.8-11.5 35-11.5 53.5v5.8c0 27 10.5 52.6 29.7 71.8L60 447.6c-6.2 6.2-6.2 16.4 0 22.6l22.6 22.6c6.2 6.2 16.4 6.2 22.6 0l17.2-17.2c19.2 19.2 44.8 29.7 71.8 29.7h5.8c18.5 0 36.7-3.5 53.5-11.5l14.9 14.9c6.2 6.2 16.4 6.2 22.6 0l22.6-22.6c6.2-6.2 6.2-16.4 0-22.6L300.5 471c19.2-19.2 29.7-44.8 29.7-71.8v-5.8c0-21.1-8.5-41.5-23.5-56.5z', '#3B82F6')
-    @staticmethod
-    def building(): return _Icons._get('building', 'M432 32H80C44.7 32 16 60.7 16 96v320c0 35.3 28.7 64 64 64h32c17.7 0 32-14.3 32-32V288h128v160c0 17.7 14.3 32 32 32h32c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64zm0 352H80V96h352v288zM160 176h64v64h-64v-64zm96 0h64v64h-64v-64zm-96 96h64v64h-64v-64zm96 0h64v64h-64v-64z', '#3B82F6')
-    @staticmethod
-    def lock(): return _Icons._get('lock', 'M400 224h-24v-72C376 68.2 307.8 0 224 0S72 68.2 72 152v72H48c-26.5 0-48 21.5-48 48v192c0 26.5 21.5 48 48 48h352c26.5 0 48-21.5 48-48V272c0-26.5-21.5-48-48-48zm-24-72c0-48.6 39.4-88 88-88s88 39.4 88 88v72H376v-72z', '#3B82F6')
-    @staticmethod
-    def key(): return _Icons._get('key', 'M500.3 441.7l-99.8-99.8c36.3-57.5 57.9-128 57.9-204.1C458.4 76.7 381.7 0 288.2 0 194.6 0 118 76.7 118 170.7c0 76.1 21.6 146.6 57.9 204.1l-99.8 99.8C64.6 493.4 52.5 512 73.6 512h345.5c21.2 0 33.3-18.6 11.2-40.3zM288.2 80c50.6 0 91.6 41 91.6 91.6 0 36-21.1 67.4-51.6 82.1-13.3-25.6-37.2-45.4-65.4-50.8V80h25.4zm-25.4 86.4c-28.2 5.4-52.1 25.2-65.4 50.8-30.5-14.7-51.6-46.1-51.6-82.1 0-50.6 41-91.6 91.6-91.6v122.9h25.4z', '#475569')
-    @staticmethod
-    def play(): return _Icons._get('play', 'M448 256c0 119.4-96.6 216-216 216S16 375.4 16 256 112.6 40 232 40s216 96.6 216 216zm-48 0l-176-112v224l176-112z', '#FFFFFF')
-    @staticmethod
-    def trash(): return _Icons._get('trash', 'M320 64h-80c0-35.3-28.7-64-64-64s-64 28.7-64 64H48C21.5 64 0 85.5 0 112v32c0 17.7 14.3 32 32 32h16l48 320h256l48-320h16c17.7 0 32-14.3 32-32v-32c0-26.5-21.5-48-48-48zM160 64c0-17.7 14.3-32 32-32s32 14.3 32 32H160zm176 368H80L48 144V112c0-8.8 7.2-16 16-16h288c8.8 0 16 7.2 16 16v32l-32 256z', '#475569')
-    @staticmethod
-    def clipboard(): return _Icons._get('clipboard', 'M448 32H336c-17.7 0-32 14.3-32 32v48H272V96c0-17.7-14.3-32-32-32h-80c-17.7 0-32 14.3-32 32v16H64c-17.7 0-32 14.3-32 32v352c0 17.7 14.3 32 32 32h384c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32zM160 64h192v48H160V64zm224 416H64V128h48v64c0 8.8 7.2 16 16 16h256c8.8 0 16-7.2 16-16v-64h48v352zM160 240h224v32H160v-32zm0 80h160v32H160v-32z', '#475569')
-    @staticmethod
-    def sync(): return _Icons._get('sync', 'M448 32H288l-32 32H64C28.7 64 0 92.7 0 128v256c0 35.3 28.7 64 64 64h139l-32 32v24c0 13.3 10.7 24 24 24h192c13.3 0 24-10.7 24-24V392l-32-32h136c35.3 0 64-28.7 64-64V128c0-35.3-28.7-64-64-64zM256 368c-61.9 0-112-50.1-112-112s50.1-112 112-112c33.1 0 62.4 14.4 83 37 8.1 9 23.3 8.6 30.9-.9l20.5-26c8.2-10.6 6.5-25.5-4-33.4C373.5 71.8 317.4 48 256 48 132.3 48 32 148.3 32 272s100.3 224 224 224 224-100.3 224-224h-32c0 53-43 96-96 96s-96-43-96-96 43-96 96-96c17.6 0 33.8 4.8 47.8 13.1L256 272v96z', '#475569')
-    @staticmethod
-    def times(): return _Icons._get('times', 'M352 96L288 32 176 144 64 32 0 96l112 112L0 320l64 64 112-112 112 112 64-64-112-112L352 96z', '#475569')
-    @staticmethod
-    def info(): return _Icons._get('info', 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256 256-114.6 256-256S391.4 0 256 0zm0 480c-123.7 0-224-100.3-224-224S132.3 32 256 32s224 100.3 224 224-100.3 224-224 224zm32-224c0-17.7-14.3-32-32-32H224c-17.7 0-32 14.3-32 32v128c0 17.7 14.3 32 32 32h32c17.7 0 32-14.3 32-32V256zm-48-96c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32z', '#475569')
-    @staticmethod
-    def file_export(): return _Icons._get('file_export', 'M320 448v40c0 13.3-10.7 24-24 24H72c-13.3 0-24-10.7-24-24V120c0-13.3 10.7-24 24-24h224v40c0 26.5 21.5 48 48 48h40zM256 0C119 0 8 111 8 248v224c0 13.3 10.7 24 24 24h32c13.3 0 24-10.7 24-24V248c0-97 79-176 176-176h32V0L256 0zm240 320h-32c-44.2 0-80 35.8-80 80v32c0 13.3 10.7 24 24 24h72c13.3 0 24-10.7 24-24v-32c0-8.8-7.2-16-16-16z', '#475569')
+def init_icons():
+    """Initialize FontAwesome icons via qtawesome. Must be called AFTER QApplication."""
+    import qtawesome as qta
+    global ICONS
+    ICONS = {
+        'eye': qta.icon('fa5s.eye', color='#475569'),
+        'eye_slash': qta.icon('fa5s.eye-slash', color='#475569'),
+        'plug': qta.icon('fa5s.plug', color='#475569'),
+        'save': qta.icon('fa5s.save', color='#FFFFFF'),
+        'folder_open': qta.icon('fa5s.folder-open', color='#3B82F6'),
+        'file': qta.icon('fa5s.file', color='#3B82F6'),
+        'chart_bar': qta.icon('fa5s.chart-bar', color='#3B82F6'),
+        'building': qta.icon('fa5s.building', color='#3B82F6'),
+        'globe': qta.icon('fa5s.globe-americas', color='#3B82F6'),
+        'lock': qta.icon('fa5s.lock', color='#3B82F6'),
+        'key': qta.icon('fa5s.key', color='#475569'),
+        'play': qta.icon('fa5s.play', color='#FFFFFF'),
+        'trash': qta.icon('fa5s.trash', color='#475569'),
+        'clipboard': qta.icon('fa5s.clipboard-list', color='#475569'),
+        'sync': qta.icon('fa5s.sync', color='#475569'),
+        'times': qta.icon('fa5s.times', color='#475569'),
+        'info': qta.icon('fa5s.info-circle', color='#475569'),
+        'file_export': qta.icon('fa5s.file-export', color='#475569'),
+    }
 
 
 class QtLogHandler(logging.Handler):
@@ -187,7 +155,7 @@ class ApiTokenDialog(QDialog):
         token_box.addWidget(self.token_entry)
 
         self.show_cb = QPushButton(" Mostrar")
-        self.show_cb.setIcon(_Icons.eye())
+        self.show_cb.setIcon(ICONS['eye'])
         self.show_cb.setCheckable(True)
         self.show_cb.setFixedHeight(34)
         self.show_cb.toggled.connect(self._toggle_show)
@@ -198,12 +166,12 @@ class ApiTokenDialog(QDialog):
 
         btn_box = QHBoxLayout()
         test_btn = QPushButton(" Probar Conexion")
-        test_btn.setIcon(_Icons.plug())
+        test_btn.setIcon(ICONS['plug'])
         test_btn.setFixedHeight(36)
         test_btn.clicked.connect(self._test_token)
 
         save_btn = QPushButton(" Guardar")
-        save_btn.setIcon(_Icons.save())
+        save_btn.setIcon(ICONS['save'])
         save_btn.setFixedHeight(36)
         save_btn.setStyleSheet("""
             QPushButton {
@@ -234,10 +202,10 @@ class ApiTokenDialog(QDialog):
         self.token_entry.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
         if checked:
             self.show_cb.setText(" Ocultar")
-            self.show_cb.setIcon(_Icons.eye_slash())
+            self.show_cb.setIcon(ICONS['eye_slash'])
         else:
             self.show_cb.setText(" Mostrar")
-        self.show_cb.setIcon(_Icons.eye())
+        self.show_cb.setIcon(ICONS['eye'])
 
     def _test_token(self):
         token = self.token_entry.text().strip()
@@ -271,7 +239,7 @@ class DropArea(QFrame):
         layout.setContentsMargins(10, 10, 10, 10)
 
         self.icon_label = QLabel()
-        self.icon_label.setPixmap(_Icons.folder_open().pixmap(48, 48))
+        self.icon_label.setPixmap(ICONS['folder_open'].pixmap(48, 48))
         self.icon_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.icon_label)
 
@@ -405,7 +373,7 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.token_status_lbl)
 
         btn_token_mgr = QPushButton(" Token IPInfo")
-        btn_token_mgr.setIcon(_Icons.key())
+        btn_token_mgr.setIcon(ICONS['key'])
         btn_token_mgr.setFixedHeight(28)
         btn_token_mgr.clicked.connect(self._manage_token)
         header_layout.addWidget(btn_token_mgr)
@@ -427,7 +395,7 @@ class MainWindow(QMainWindow):
         btn_file_layout = QVBoxLayout()
         btn_file_layout.setSpacing(8)
         self.btn_select_file = QPushButton(" Seleccionar Archivo")
-        self.btn_select_file.setIcon(_Icons.folder_open())
+        self.btn_select_file.setIcon(ICONS['folder_open'])
         self.btn_select_file.setMinimumHeight(32)
         self.btn_select_file.setStyleSheet("""
             QPushButton {
@@ -500,7 +468,7 @@ class MainWindow(QMainWindow):
         # Action Buttons
         action_layout = QHBoxLayout()
         self.btn_start = QPushButton(" Iniciar Analisis")
-        self.btn_start.setIcon(_Icons.play())
+        self.btn_start.setIcon(ICONS['play'])
         self.btn_start.setFixedHeight(32)
         self.btn_start.setStyleSheet("""
             QPushButton {
@@ -523,7 +491,7 @@ class MainWindow(QMainWindow):
         action_layout.addWidget(self.btn_start)
 
         self.btn_clear = QPushButton(" Limpiar")
-        self.btn_clear.setIcon(_Icons.trash())
+        self.btn_clear.setIcon(ICONS['trash'])
         self.btn_clear.setFixedHeight(32)
         self.btn_clear.clicked.connect(self._clear_all)
         action_layout.addWidget(self.btn_clear)
@@ -531,7 +499,7 @@ class MainWindow(QMainWindow):
         action_layout.addStretch()
 
         self.btn_toggle_log = QPushButton(" Mostrar Log")
-        self.btn_toggle_log.setIcon(_Icons.clipboard())
+        self.btn_toggle_log.setIcon(ICONS['clipboard'])
         self.btn_toggle_log.setCheckable(True)
         self.btn_toggle_log.setChecked(False)
         self.btn_toggle_log.setFixedHeight(32)
@@ -565,10 +533,10 @@ class MainWindow(QMainWindow):
         # --- KPI Cards ---
         stats_layout = QHBoxLayout()
         stats_layout.setSpacing(6)
-        self.card_total = StatCard("Total IPs", "0", _Icons.globe())
-        self.card_isps = StatCard("ISPs Unicos", "0", _Icons.building())
-        self.card_countries = StatCard("Paises", "0", _Icons.globe())
-        self.card_private = StatCard("Redes Privadas", "0", _Icons.lock())
+        self.card_total = StatCard("Total IPs", "0", ICONS['globe'])
+        self.card_isps = StatCard("ISPs Unicos", "0", ICONS['building'])
+        self.card_countries = StatCard("Paises", "0", ICONS['globe'])
+        self.card_private = StatCard("Redes Privadas", "0", ICONS['lock'])
 
         stats_layout.addWidget(self.card_total)
         stats_layout.addWidget(self.card_isps)
@@ -672,19 +640,19 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("&Archivo")
 
         action_token = QAction(" Gestionar Token IPInfo...", self)
-        action_token.setIcon(_Icons.key())
+        action_token.setIcon(ICONS['key'])
         action_token.triggered.connect(self._manage_token)
         file_menu.addAction(action_token)
 
         action_reload = QAction(" Recargar Token (.env)", self)
-        action_reload.setIcon(_Icons.sync())
+        action_reload.setIcon(ICONS['sync'])
         action_reload.triggered.connect(self._reload_env)
         file_menu.addAction(action_reload)
 
         file_menu.addSeparator()
 
         self.action_export = QAction(" Exportar Informe...", self)
-        self.action_export.setIcon(_Icons.file_export())
+        self.action_export.setIcon(ICONS['file_export'])
         self.action_export.setEnabled(False)
         self.action_export.triggered.connect(self._export_report)
         file_menu.addAction(self.action_export)
@@ -692,19 +660,19 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
 
         action_exit = QAction(" Salir", self)
-        action_exit.setIcon(_Icons.times())
+        action_exit.setIcon(ICONS['times'])
         action_exit.triggered.connect(self.close)
         file_menu.addAction(action_exit)
 
         view_menu = menu_bar.addMenu("&Ver")
         self.action_toggle_log = QAction(" Log de Ejecucion", self, checkable=True)
-        self.action_toggle_log.setIcon(_Icons.clipboard())
+        self.action_toggle_log.setIcon(ICONS['clipboard'])
         self.action_toggle_log.toggled.connect(self.btn_toggle_log.setChecked)
         view_menu.addAction(self.action_toggle_log)
 
         help_menu = menu_bar.addMenu("&Ayuda")
         action_about = QAction(" Acerca de IP Analyzer", self)
-        action_about.setIcon(_Icons.info())
+        action_about.setIcon(ICONS['info'])
         action_about.triggered.connect(self._show_about)
         help_menu.addAction(action_about)
 
@@ -812,10 +780,10 @@ class MainWindow(QMainWindow):
         self.log_widget.setVisible(checked)
         if checked:
             self.btn_toggle_log.setText(" Ocultar Log")
-            self.btn_toggle_log.setIcon(_Icons.clipboard())
+            self.btn_toggle_log.setIcon(ICONS['clipboard'])
         else:
             self.btn_toggle_log.setText(" Mostrar Log")
-            self.btn_toggle_log.setIcon(_Icons.clipboard())
+            self.btn_toggle_log.setIcon(ICONS['clipboard'])
         self.action_toggle_log.setChecked(checked)
 
     def _manage_token(self):
@@ -844,7 +812,7 @@ class MainWindow(QMainWindow):
             file_size_kb = path.stat().st_size / 1024
             size_str = f"{file_size_kb:.1f} KB" if file_size_kb < 1024 else f"{file_size_kb/1024:.2f} MB"
 
-            self.drop_area.icon_label.setPixmap(_Icons.file().pixmap(48, 48))
+            self.drop_area.icon_label.setPixmap(ICONS['file'].pixmap(48, 48))
             self.drop_area.label.setText(f"<b>{path.name}</b><br><span style='font-size: 11px; color: #64748B;'>Tamano: {size_str}</span>")
             self.drop_area.set_file_selected_style()
             self.status_bar.showMessage(f"Archivo cargado correctamente: {path.name}")
@@ -1049,7 +1017,7 @@ class MainWindow(QMainWindow):
         self.card_countries.set_value("0")
         self.card_private.set_value("0")
 
-        self.drop_area.icon_label.setPixmap(_Icons.folder_open())
+        self.drop_area.icon_label.setPixmap(ICONS['folder_open'])
         self.drop_area.label.setText("Arrastre y suelte su archivo aqui (.txt, .log, .csv, .docx)<br><span style='font-size: 11px; color: #64748B;'>o haga clic en 'Seleccionar Archivo'</span>")
         self.drop_area.reset_style()
         self.status_bar.showMessage("Listo para iniciar un nuevo analisis.")
@@ -1117,6 +1085,7 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    init_icons()
     win = MainWindow()
     win.show()
     sys.exit(app.exec())
