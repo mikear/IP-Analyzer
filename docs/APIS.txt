@@ -1,4 +1,4 @@
-IPINFO_TOKEN=d03286f5538ff5
+IPINFO_TOKEN=YOUR_IPINFO_TOKEN_HERE
 
 
 pyinstaller --onefile --windowed --icon=app_icon.ico --add-data "ABOUT.txt:." --add-data "manual.txt:." --add-data ".env:." ip_analyzer_gui.py
