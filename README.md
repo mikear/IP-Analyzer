@@ -19,10 +19,15 @@ El motor de analisis es **100% determinista, ultra rapido y de procesamiento loc
 - **Extraccion Local Determinista Rapida:** Algoritmo de parseo que identifica direcciones IP (IPv4 e IPv6) y sus marcas de tiempo asociadas en archivos `.txt`, `.log`, `.csv` y `.docx`.
 - **Geolocalizacion e ISP:** Enriquecimiento de datos con `ipinfo.io` (ciudad, region, pais, ISP y hostname). Capaz de operar en modo offline sin token.
 - **Conversion Universal de Zonas Horarias:** Convierte automaticamente cualquier timestamp al huso horario solicitado (UTC, UTC-3, etc.).
-- **Generacion de Informes Forenses:** Exportacion completa a `.pdf`, `.csv`, `.json` y `.txt` con metadatos del caso (investigador, juzgado/fiscalia, causa/referencia) y hash **SHA256** del archivo original para mantener la cadena de custodia de evidencia digital.
+- **Exportacion Flexible con Filtros:** Exporta el reporte legal en tres modos:
+  - **Todos:** Exporta el conjunto completo de resultados.
+  - **Filtrados:** Exporta solo los registros que coinciden con los filtros activos (busqueda por texto y/o pais).
+  - **Seleccionados:** Exporta unicamente las filas seleccionadas manualmente en la tabla.
+  - Soporta formatos `.pdf`, `.csv`, `.json` y `.txt` con metadatos del caso (investigador, juzgado/fiscalia, causa/referencia), rango de exportacion y hash **SHA256** del archivo original para mantener la cadena de custodia de evidencia digital.
 - **Interfaz Grafica Moderna (PySide6 / Qt):**
   - Area **Drag & Drop** para arrastrar archivos directamente.
   - Busqueda global y filtrado interactivo en tiempo real por pais.
+  - Contador de resultados visible al filtrar.
   - Ejecucion asincrona multihilo (`QThread`) para mantener la fluidez de la interfaz.
   - Consola de logs integrada y barra de progreso.
   - Iconos FontAwesome via `qtawesome` para una interfaz profesional y consistente.
@@ -31,14 +36,7 @@ El motor de analisis es **100% determinista, ultra rapido y de procesamiento loc
 
 ## Capturas de Pantalla
 
-### Interfaz Grafica Principal (PySide6 / Qt)
-![Interfaz Grafica Principal](assets/screenshots/main-window.png)
-
-### Ejemplo de Archivo de Log de Entrada
-![Ejemplo Log Entrada](assets/screenshots/unestructured-log.png)
-
-### Resultados y Modelo de Informe
-![Resultado del Analisis](assets/screenshots/report-model.png)
+![IP Analyzer - Analisis de 200 IPs con geolocalizacion y ISP](assets/screenshots/03-analysis-results.png)
 
 ---
 

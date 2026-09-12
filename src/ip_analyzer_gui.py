@@ -58,6 +58,19 @@ def init_icons():
     }
 
 
+def _tz_to_etc(tz_display: str) -> str:
+    """Convert display timezone like 'UTC-3' to 'Etc/GMT+3' (signs inverted per POSIX)."""
+    if tz_display == "UTC":
+        return "UTC"
+    if tz_display.startswith("UTC+"):
+        offset = int(tz_display[4:])
+        return f"Etc/GMT-{offset}" if offset else "UTC"
+    if tz_display.startswith("UTC-"):
+        offset = int(tz_display[4:])
+        return f"Etc/GMT+{offset}" if offset else "UTC"
+    return tz_display
+
+
 class QtLogHandler(logging.Handler):
     def __init__(self, signal: Signal):
         super().__init__()
@@ -119,6 +132,8 @@ class ApiTokenDialog(QDialog):
         self.setModal(True)
         self.token = current_token
 
+        self.setStyleSheet("QDialog { background-color: #FFFFFF; }")
+
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -129,12 +144,26 @@ class ApiTokenDialog(QDialog):
 
         info_lbl = QLabel(
             "Ingrese su token de API de <b>ipinfo.io</b> para obtener la geolocalizacion, "
-            "proveedor ISP y hostname de cada direccion IP consultada.<br><br>"
-            "<i>Nota: Si no cuenta con token, el analisis se ejecutara en modo 100% local extrayendo IPs y timestamps.</i>"
+            "proveedor ISP y hostname de cada direccion IP consultada."
         )
         info_lbl.setWordWrap(True)
         info_lbl.setStyleSheet("color: #475569; font-size: 12px; line-height: 1.4;")
         layout.addWidget(info_lbl)
+
+        link_lbl = QLabel(
+            '<a href="https://ipinfo.io/signup" style="color: #2563EB; font-size: 12px;">'
+            'Obtener token gratuito en ipinfo.io/signup</a>'
+        )
+        link_lbl.setOpenExternalLinks(True)
+        layout.addWidget(link_lbl)
+
+        note_lbl = QLabel(
+            "<i>Nota: Si no cuenta con token, el analisis se ejecutara en modo 100% local "
+            "extrayendo IPs y timestamps.</i>"
+        )
+        note_lbl.setWordWrap(True)
+        note_lbl.setStyleSheet("color: #64748B; font-size: 11px; font-style: italic;")
+        layout.addWidget(note_lbl)
 
         form_card = QFrame()
         form_card.setStyleSheet("""
@@ -729,10 +758,19 @@ class MainWindow(QMainWindow):
                 border-radius: 6px;
                 padding: 5px 10px;
                 background-color: #FFFFFF;
+                color: #0F172A;
                 font-size: 12px;
             }
             QLineEdit:focus, QComboBox:focus {
                 border-color: #2563EB;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #FFFFFF;
+                color: #0F172A;
+                selection-background-color: #DBEAFE;
+                selection-color: #1E3A8A;
+                border: 1px solid #CBD5E1;
+                padding: 4px;
             }
             QPushButton {
                 border: 1px solid #CBD5E1;
@@ -836,7 +874,7 @@ class MainWindow(QMainWindow):
         self.worker_thread = QThread()
         self.worker = AnalysisWorker(
             filepath=self.selected_file,
-            target_tz=self.tz_combo.currentText(),
+            target_tz=_tz_to_etc(self.tz_combo.currentText()),
             ipinfo_token=self.ipinfo_token,
             file_hash=file_hash,
             app_version=self.windowTitle()
@@ -972,6 +1010,62 @@ class MainWindow(QMainWindow):
 
         self.country_combo.blockSignals(False)
 
+    def _get_filtered_results(self):
+        """Return (filtered_results, filter_description_string) based on current filter widgets."""
+        search_text = self.search_entry.text().lower().strip()
+        selected_country = self.country_combo.currentText()
+        filters_applied = []
+
+        prep_data = file_io._prepare_export_data(self.full_results)
+        filtered = []
+
+        for orig, prep in zip(self.full_results, prep_data):
+            if selected_country != "Todos" and prep.get("country") != selected_country:
+                continue
+            if search_text:
+                combined_text = " ".join([
+                    str(prep.get("ip_address", "")),
+                    str(prep.get("isp", "")),
+                    str(prep.get("location", "")),
+                    str(prep.get("hostname", "")),
+                    str(prep.get("timestamp_utc", "")),
+                    str(prep.get("timestamp_converted", ""))
+                ]).lower()
+                if search_text not in combined_text:
+                    continue
+            filtered.append(orig)
+
+        if selected_country != "Todos":
+            filters_applied.append(f"Pais: {selected_country}")
+        if search_text:
+            filters_applied.append(f"Busqueda: \"{self.search_entry.text().strip()}\"")
+
+        filter_desc = "; ".join(filters_applied) if filters_applied else None
+        return filtered, filter_desc
+
+    def _get_selected_results(self):
+        """Return (selected_results, count) from table row selections."""
+        selected_rows = set()
+        for idx in self.table.selectionModel().selectedRows():
+            selected_rows.add(idx.row())
+
+        if not selected_rows:
+            return [], 0
+
+        prep_data = file_io._prepare_export_data(self.full_results)
+        selected = []
+        for row_num in selected_rows:
+            n_item = self.table.item(row_num, 0)
+            if n_item:
+                try:
+                    idx = int(n_item.text()) - 1
+                    if 0 <= idx < len(self.full_results):
+                        selected.append(self.full_results[idx])
+                except (ValueError, TypeError):
+                    pass
+
+        return selected, len(selected)
+
     def _filter_table(self):
         search_text = self.search_entry.text().lower().strip()
         selected_country = self.country_combo.currentText()
@@ -997,6 +1091,7 @@ class MainWindow(QMainWindow):
 
             filtered.append(orig)
 
+        self.lbl_result_count.setText(f"Resultados: {len(filtered)} IPs")
         self._populate_table(filtered)
 
     def _clear_all(self):
@@ -1026,6 +1121,59 @@ class MainWindow(QMainWindow):
         if not self.full_results:
             return
 
+        filtered_results, filter_desc = self._get_filtered_results()
+        selected_results, sel_count = self._get_selected_results()
+        total = len(self.full_results)
+        filt_count = len(filtered_results)
+
+        has_filters = filter_desc is not None
+        has_selection = sel_count > 0
+        is_filtered_view = has_filters and filt_count < total
+
+        if is_filtered_view or has_selection:
+            options = []
+            labels = []
+
+            opt_all = f"Todos los resultados ({total} IPs)"
+            options.append(("all", total))
+            labels.append(opt_all)
+
+            if has_filters:
+                opt_filt = f"Solo filtrados ({filt_count} de {total} IPs) — {filter_desc}"
+                options.append(("filtered", filt_count))
+                labels.append(opt_filt)
+
+            if has_selection:
+                opt_sel = f"Solo seleccionados ({sel_count} IPs)"
+                options.append(("selected", sel_count))
+                labels.append(opt_sel)
+
+            from PySide6.QtWidgets import QInputDialog
+            chosen, ok = QInputDialog.getItem(
+                self, "Exportar Informe", "Que desea exportar?", labels, 0, False
+            )
+            if not ok:
+                return
+
+            idx = labels.index(chosen)
+            mode = options[idx][0]
+        else:
+            mode = "all"
+
+        if mode == "all":
+            export_results = self.full_results
+            export_filter_desc = None
+        elif mode == "filtered":
+            export_results = filtered_results
+            export_filter_desc = filter_desc
+        else:
+            export_results = selected_results
+            export_filter_desc = None
+
+        if not export_results:
+            QMessageBox.warning(self, "Sin datos", "No hay resultados para exportar con la seleccion indicada.")
+            return
+
         suggested_fn = f"Informe_IP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         filepath, selected_filter = QFileDialog.getSaveFileName(
             self, "Exportar Informe", suggested_fn,
@@ -1053,11 +1201,19 @@ class MainWindow(QMainWindow):
         if self.analysis_metadata:
             meta.update(self.analysis_metadata)
 
+        if mode == "all":
+            meta["rango_exportacion"] = f"Todos ({total} IPs)"
+        elif mode == "filtered":
+            meta["rango_exportacion"] = f"Filtrados ({filt_count} de {total} IPs)"
+            meta["filtros_aplicados"] = filter_desc
+        elif mode == "selected":
+            meta["rango_exportacion"] = f"Seleccionados ({sel_count} IPs)"
+
         try:
             export_func = getattr(file_io, f"export_to_{fmt}", None)
             if export_func:
-                export_func(path, self.full_results, meta)
-                QMessageBox.information(self, "Exito", f"Informe exportado correctamente a:\n{path}")
+                export_func(path, export_results, meta)
+                QMessageBox.information(self, "Exito", f"Informe exportado correctamente a:\n{path}\n\n{len(export_results)} IPs exportados.")
             else:
                 QMessageBox.critical(self, "Error", f"Formato no soportado: {fmt}")
         except Exception as e:
