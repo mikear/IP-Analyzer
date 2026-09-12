@@ -231,8 +231,9 @@ class IPAnalyzerPDF(FPDF):
         self.cell(0, 10, page_num_text, 0, 0, 'R')
 
         # Custom footer text (centered)
-        app_name = self.app_metadata.get("app_version", "Aplicación").split(" v")[0] # Extract name from "Name vX.Y"
-        app_version = self.app_metadata.get("app_version", "")
+        app_ver_raw = self.app_metadata.get("app_version") or "IP Analyzer v2.2"
+        app_name = app_ver_raw.split(" v")[0] if " v" in app_ver_raw else app_ver_raw
+        app_version = app_ver_raw
         developer_name = "Diego A. Rábalo" # Updated developer name
         linkedin_url = "https://www.linkedin.com/in/rabalo" # Updated LinkedIn URL
 

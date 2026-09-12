@@ -124,7 +124,6 @@ def parse_and_convert_timezone(
 def process_ip_analysis(
     input_filepath: Union[str, Path],
     target_timezone: str,
-    gemini_key: Optional[str] = None, # Kept for backward compatibility if called with positional args
     ipinfo_token: Optional[str] = None,
     progress_queue: Optional[Queue] = None,
     log_queue_handler: Optional[logging.Handler] = None,
@@ -132,11 +131,6 @@ def process_ip_analysis(
     app_version: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Orquesta el proceso completo con extracción determinista."""
-
-    # Handle case where gemini_key parameter is passed or omitted in position
-    if ipinfo_token is None and gemini_key is not None and isinstance(gemini_key, str) and not gemini_key.startswith("AIza"):
-        # If gemini_key was positional slot but holds token, swap
-        ipinfo_token = gemini_key
 
     if log_queue_handler:
         if not log_queue_handler.formatter:
