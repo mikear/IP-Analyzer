@@ -32,6 +32,14 @@ TIMESTAMP_PATTERNS = [
     re.compile(r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:\s+\d{4})?\s+\d{2}:\d{2}:\d{2}(?:\s*[\+\-]\d{4}|\s*UTC|\s*GMT)?\b', re.IGNORECASE),
 ]
 
+# Keywords that indicate VPN, Proxy, Datacenter, TOR or Hosting
+VPN_PROXY_KEYWORDS = [
+    "vpn", "proxy", "tor", "exit node", "m247", "nord", "expressvpn", "surfshark",
+    "cyberghost", "private internet access", "proton", "ovh", "hetzner", "digitalocean",
+    "linode", "aws", "amazon", "google cloud", "azure", "vultr", "choopa", "datacenter",
+    "hosting", "server", "cloud", "clouder", "vps"
+]
+
 def validate_api_keys(ipinfo_token: Optional[str]) -> bool:
     """Valida el token API de ipinfo.io."""
     if not ipinfo_token:
@@ -102,6 +110,48 @@ def extract_ip_data_deterministic(text_content: str) -> List[Dict[str, str]]:
     logger.info(f"Extracción determinista completada: {len(extracted_data)} IPs/timestamps encontrados.")
     return extracted_data
 
+def detect_privacy_type(data: Dict[str, Any], isp_name: str, hostname: str) -> Dict[str, Any]:
+    """Detecta si la IP corresponde a una VPN, Proxy, TOR o Datacenter/Hosting."""
+    privacy_info = {
+        "is_vpn": False,
+        "is_proxy": False,
+        "is_tor": False,
+        "is_hosting": False,
+        "privacy_label": "Residencial / IP Real"
+    }
+
+    # 1. Check direct 'privacy' field if returned by ipinfo.io (standard on paid or standard plan)
+    privacy_obj = data.get("privacy", {})
+    if isinstance(privacy_obj, dict) and privacy_obj:
+        if privacy_obj.get("vpn"): privacy_info["is_vpn"] = True
+        if privacy_obj.get("proxy"): privacy_info["is_proxy"] = True
+        if privacy_obj.get("tor"): privacy_info["is_tor"] = True
+        if privacy_obj.get("hosting"): privacy_info["is_hosting"] = True
+
+    # 2. Heuristic check based on ISP, Org, and Hostname
+    combined_info = f"{isp_name} {hostname}".lower()
+
+    if any(k in combined_info for k in ["vpn", "nordvpn", "expressvpn", "m247", "private internet access", "protonvpn", "surfshark", "cyberghost"]):
+        privacy_info["is_vpn"] = True
+    if any(k in combined_info for k in ["proxy", "exit node"]):
+        privacy_info["is_proxy"] = True
+    if "tor" in combined_info.split():
+        privacy_info["is_tor"] = True
+    if any(k in combined_info for k in ["hetzner", "ovh", "digitalocean", "linode", "aws", "amazon", "google cloud", "azure", "vultr", "datacenter", "hosting", "vps"]):
+        privacy_info["is_hosting"] = True
+
+    # Set summary label
+    labels = []
+    if privacy_info["is_tor"]: labels.append("TOR Exit Node")
+    if privacy_info["is_vpn"]: labels.append("VPN Detectada")
+    if privacy_info["is_proxy"]: labels.append("Proxy Detectado")
+    if privacy_info["is_hosting"]: labels.append("Hosting / Datacenter")
+
+    if labels:
+        privacy_info["privacy_label"] = " / ".join(labels)
+
+    return privacy_info
+
 _token_ipinfo_missing_logged = False
 def get_ip_info(ip_address: str, token: str, cache: Dict[str, Any]) -> Dict[str, Any]:
     """Obtiene información de geolocalización e ISP desde ipinfo.io."""
@@ -114,7 +164,8 @@ def get_ip_info(ip_address: str, token: str, cache: Dict[str, Any]) -> Dict[str,
     logger.debug(f"Cache MISS para IP: {ip_address}")
     result = {
         "isp": "N/A", "city": "N/A", "region": "N/A",
-        "country": "N/A", "hostname": "N/A", "error": None
+        "country": "N/A", "hostname": "N/A", "error": None,
+        "privacy": {"is_vpn": False, "is_proxy": False, "is_tor": False, "is_hosting": False, "privacy_label": "Desconocido"}
     }
     if not is_valid_ip(ip_address):
         result["error"] = "IP Inválida (Formato)"
@@ -122,6 +173,7 @@ def get_ip_info(ip_address: str, token: str, cache: Dict[str, Any]) -> Dict[str,
         return result
     if not token:
         result["error"] = "Token IPinfo Faltante"
+        result["privacy"]["privacy_label"] = "Sin Token (Local)"
         if not _token_ipinfo_missing_logged:
             logger.critical("Token API ipinfo.io no configurado en .env.")
             _token_ipinfo_missing_logged = True
@@ -138,6 +190,7 @@ def get_ip_info(ip_address: str, token: str, cache: Dict[str, Any]) -> Dict[str,
         if ip_type:
             result["error"] = f"IP {ip_type}"
             result["isp"] = f"Red {ip_type}"
+            result["privacy"]["privacy_label"] = f"Red {ip_type}"
             logger.info(f"IP '{ip_address}' es {ip_type}. No se consultará ipinfo.io.")
             cache[ip_address] = result
             return result
@@ -161,12 +214,16 @@ def get_ip_info(ip_address: str, token: str, cache: Dict[str, Any]) -> Dict[str,
             else: isp_val = org_field
         if not isp_val or isp_val == 'N/A': isp_val = data.get('isp', 'N/A')
 
+        hostname_val = data.get('hostname') or "N/A"
+        privacy_details = detect_privacy_type(data, isp_val, hostname_val)
+
         result.update({
             "isp": isp_val if isp_val else "N/A",
             "city": data.get('city') or "N/A",
             "region": data.get('region') or "N/A",
             "country": data.get('country') or "N/A",
-            "hostname": data.get('hostname') or "N/A",
+            "hostname": hostname_val,
+            "privacy": privacy_details,
             "error": None
         })
 

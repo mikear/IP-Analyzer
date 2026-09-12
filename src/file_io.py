@@ -76,7 +76,7 @@ def read_input_file(filepath: Path) -> Union[str, None]:
         return None
 
 def _prepare_export_data(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Prepara datos para exportación/visualización (aplana, combina)."""
+    """Prepara datos para exportación/visualización (aplana, combina e incluye privacidad/VPN)."""
     export_list = []
     if not results: return []
     for idx, result in enumerate(results, start=1):
@@ -85,12 +85,15 @@ def _prepare_export_data(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         timestamp_utc = result.get('original_timestamp_utc_str', 'N/A')
         timestamp_converted = result.get('converted_timestamp', 'N/A')
         ip_info = result.get('ip_info', {})
+        privacy = ip_info.get('privacy', {})
+        privacy_label = privacy.get('privacy_label', 'Desconocido') if isinstance(privacy, dict) else 'Desconocido'
 
         flat_data = {
             "orden": idx, "ip_address": ip_address,
             "raw_timestamp_str": raw_timestamp_str,
             "timestamp_utc": timestamp_utc,
             "timestamp_converted": timestamp_converted,
+            "privacy_status": privacy_label
         }
         ip_error = ip_info.get('error')
         if ip_error:
@@ -116,14 +119,13 @@ def _prepare_export_data(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def format_report(results: List[Dict[str, Any]], requested_timezone: str, metadata: Dict[str, str]) -> str:
     """Genera un informe de texto plano formateado."""
-    output = io.StringIO(); report_width = 180
+    output = io.StringIO(); report_width = 200
     print("=" * report_width, file=output)
-    print(f"{ 'INFORME DE ANÁLISIS DE IPs Y ISPs':^{report_width}}", file=output)
+    print(f"{ 'INFORME DE ANÁLISIS DE IPs, ISPs Y VPN/PRIVACIDAD':^{report_width}}", file=output)
     print("=" * report_width, file=output)
 
     if metadata:
         print("\n--- Datos del Caso ---", file=output)
-        # Add SHA256 and App Version to metadata for display
         if "input_file_sha256" in metadata and metadata["input_file_sha256"]:
             print(f"SHA256 del Archivo de Entrada: {metadata['input_file_sha256']}", file=output)
         if "app_version" in metadata and metadata["app_version"]:
@@ -146,12 +148,11 @@ def format_report(results: List[Dict[str, Any]], requested_timezone: str, metada
         return output.getvalue()
 
     prepared_data = _prepare_export_data(results)
-    headers = {"orden": "Nº", "ip_address": "IP Address", "timestamp_utc": "Timestamp (UTC)", "timestamp_converted": f"Timestamp ({final_tz_used})", "isp": "ISP / Error", "location": "Ubicación", "hostname": "Hostname"}
-    widths = {"orden": 4, "ip_address": 38, "timestamp_utc": 23, "timestamp_converted": 28, "isp": 30, "location": 30, "hostname": 24}
+    headers = {"orden": "Nº", "ip_address": "IP Address", "timestamp_utc": "Timestamp (UTC)", "timestamp_converted": f"Timestamp ({final_tz_used})", "isp": "ISP / Error", "privacy_status": "Tipo Red / Privacidad", "location": "Ubicación", "hostname": "Hostname"}
+    widths = {"orden": 4, "ip_address": 32, "timestamp_utc": 22, "timestamp_converted": 26, "isp": 26, "privacy_status": 26, "location": 26, "hostname": 22}
     header_keys = list(headers.keys())
     separator = " | "; total_w = sum(widths[k] for k in header_keys) + (len(headers) - 1) * len(separator)
     if total_w > report_width: report_width = total_w
-    logger.debug(f"(Ancho tabla TXT: {total_w} caracteres)")
 
     header_line = separator.join([f"{headers[h]:<{widths[h]}}" for h in header_keys])
     print(header_line, file=output)
@@ -184,7 +185,6 @@ def export_to_csv(filepath: Union[str, Path], results: List[Dict[str, Any]], met
                     csvfile.write(f"# SHA256 del Archivo de Entrada: {metadata['input_file_sha256']}\n")
                 if "app_version" in metadata and metadata["app_version"]:
                     csvfile.write(f"# Versión de la Aplicación: {metadata['app_version']}\n")
-                # Write other metadata
                 for k, v in metadata.items():
                     if k not in ["input_file_sha256", "app_version", "analysis_start_time", "analysis_duration_seconds", "input_filepath", "target_timezone"]:
                         csvfile.write(f"# {k.replace('_',' ').title()}: {v}\n")
@@ -218,47 +218,35 @@ class IPAnalyzerPDF(FPDF):
     def __init__(self, orientation='L', unit='mm', format='A4', metadata: Dict[str, str] = None):
         super().__init__(orientation, unit, format)
         self.app_metadata = metadata if metadata is not None else {}
-        self.set_font("Helvetica", size=8) # Default font for footer
-
-    def footer(self):
-        # Position at 1.5 cm from bottom
-        self.set_y(-15)
-        # Set font
         self.set_font("Helvetica", size=8)
 
-        # Page number (right aligned)
-        page_num_text = f"Pág. {self.page_no()}/{{nb}}" # {nb} is a placeholder for total pages
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Helvetica", size=8)
+        page_num_text = f"Pág. {self.page_no()}/{{nb}}"
         self.cell(0, 10, page_num_text, 0, 0, 'R')
 
-        # Custom footer text (centered)
-        app_name = self.app_metadata.get("app_version", "Aplicación").split(" v")[0] # Extract name from "Name vX.Y"
+        app_name = self.app_metadata.get("app_version", "Aplicación").split(" v")[0]
         app_version = self.app_metadata.get("app_version", "")
-        developer_name = "Diego A. Rábalo" # Updated developer name
-        linkedin_url = "https://www.linkedin.com/in/rabalo" # Updated LinkedIn URL
+        developer_name = "Diego A. Rábalo"
+        linkedin_url = "https://www.linkedin.com/in/rabalo"
 
         footer_text_part1 = f"Informe creado por {app_name} {app_version}, desarrollado por {developer_name}"
-        footer_text_part2 = f" ({linkedin_url})" # LinkedIn URL as text
+        footer_text_part2 = f" ({linkedin_url})"
 
-        # Calculate width of the combined text
         combined_text_width = self.get_string_width(footer_text_part1 + footer_text_part2)
-        
-        # Calculate X position for centering
         center_x = (self.w - combined_text_width) / 2
         self.set_x(center_x)
 
-        # Print first part of the footer text
-        self.set_text_color(0) # Black color for normal text
-        self.set_font("Helvetica", size=8) # Normal font
+        self.set_text_color(0)
+        self.set_font("Helvetica", size=8)
         self.cell(self.get_string_width(footer_text_part1), 10, footer_text_part1, 0, 0, 'L')
 
-        # Print LinkedIn URL as clickable text
-        self.set_text_color(0, 0, 255) # Blue color for link
-        self.set_font("Helvetica", size=8, style='U') # Underline for link
+        self.set_text_color(0, 0, 255)
+        self.set_font("Helvetica", size=8, style='U')
         self.cell(self.get_string_width(footer_text_part2), 10, footer_text_part2, 0, 0, 'L', link=linkedin_url)
-        
-        # Reset color and font for subsequent text (if any)
         self.set_text_color(0)
-        self.set_font("Helvetica", size=8) # Reset font
+        self.set_font("Helvetica", size=8)
 
 def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], metadata: Dict[str, str]) -> None:
     filepath = Path(filepath)
@@ -266,29 +254,23 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
         logger.critical("Falta 'fpdf2' para generar PDF. Instala: pip install fpdf2")
         raise ImportError("Dependencia FPDF2 no encontrada para exportar a PDF.")
 
-    # Instantiate custom PDF class, passing metadata
     pdf = IPAnalyzerPDF(orientation='L', unit='mm', format='A4', metadata=metadata)
-    pdf.alias_nb_pages() # This is crucial for {nb} to work
+    pdf.alias_nb_pages()
     pdf.add_page(); pdf.set_auto_page_break(auto=True, margin=15)
     pdf.set_font("Helvetica", size=8); page_width = pdf.w - 2 * pdf.l_margin
 
     pdf.set_font("Helvetica", 'B', size=14)
-    pdf.cell(page_width, 10, "Informe de Análisis de IPs y ISPs", ln=True, align='C'); pdf.ln(5)
+    pdf.cell(page_width, 10, "Informe de Análisis de IPs, ISPs y VPN/Privacidad", ln=True, align='C'); pdf.ln(5)
 
     if metadata:
         pdf.set_font("Helvetica", 'B', size=9); pdf.cell(page_width, 7, "Datos del Caso:", ln=True)
         pdf.set_font("Helvetica", size=8)
-        # Add SHA256 and App Version to metadata for display
         if "input_file_sha256" in metadata and metadata["input_file_sha256"]:
             pdf.multi_cell(page_width, 4.5, f"  SHA256 del Archivo de Entrada: {metadata['input_file_sha256']}", ln=True)
         if "app_version" in metadata and metadata["app_version"]:
             pdf.multi_cell(page_width, 4.5, f"  Versión de la Aplicación: {metadata['app_version']}", ln=True)
         
-        # Add Total Pages to metadata for display
-        # This will be a placeholder for now, updated after content is added
-        pdf.multi_cell(page_width, 4.5, f"  Total páginas: {{nb}}", ln=True) # Placeholder for total pages
-        
-        # Print other metadata
+        pdf.multi_cell(page_width, 4.5, f"  Total páginas: {{nb}}", ln=True)
         for k, v in metadata.items():
             if k not in ["input_file_sha256", "app_version", "analysis_start_time", "analysis_duration_seconds", "input_filepath", "target_timezone"]:
                 pdf.multi_cell(page_width, 4.5, f"  {k.replace('_',' ').title()}: {v}", ln=True)
@@ -303,15 +285,14 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
         pdf.cell(page_width, 10, "No se encontraron datos válidos.", ln=True, align='C')
     else:
         pdf_data = _prepare_export_data(results)
-        headers = ["Nº", "IP Address", "TS (UTC)", f"TS ({requested_tz})", "ISP/Error", "Ubicación", "Hostname"]
-        data_keys = ["orden", "ip_address", "timestamp_utc", "timestamp_converted", "isp", "location", "hostname"]
-        col_w = {'orden': 10, 'ip_address': 45, 'timestamp_utc': 45, 'timestamp_converted': 50, 'isp': 45, 'location': 45, 'hostname': 37}
+        headers = ["Nº", "IP Address", "TS (UTC)", f"TS ({requested_tz})", "ISP/Error", "Privacidad / Red", "Ubicación", "Hostname"]
+        data_keys = ["orden", "ip_address", "timestamp_utc", "timestamp_converted", "isp", "privacy_status", "location", "hostname"]
+        col_w = {'orden': 8, 'ip_address': 38, 'timestamp_utc': 38, 'timestamp_converted': 42, 'isp': 38, 'privacy_status': 40, 'location': 36, 'hostname': 32}
         total_w = sum(col_w.values())
         if total_w > page_width:
-             logger.warning(f"PDF anchos ({total_w}mm) exceden página ({page_width}mm). Ajustando...")
              scale = page_width / total_w; col_w = {k: v * scale for k, v in col_w.items()}
 
-        line_height = 4.5 # Altura estimada por línea de texto
+        line_height = 4.5
         header_height = 6
         pdf.set_font("Helvetica", 'B', size=7); pdf.set_fill_color(230); pdf.set_line_width(0.2); pdf.set_text_color(0)
         for key in data_keys: pdf.cell(col_w[key], header_height, headers[data_keys.index(key)], border=1, align='C', fill=True)
@@ -319,7 +300,6 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
 
         pdf.set_font("Helvetica", size=7)
         for row_dict in pdf_data:
-            # Calcular altura necesaria para la fila
             max_lines = 1
             for key in data_keys:
                  value = str(row_dict.get(key, ''))

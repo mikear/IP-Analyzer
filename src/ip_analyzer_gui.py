@@ -99,7 +99,7 @@ class ApiTokenDialog(QDialog):
         layout.setSpacing(15)
 
         info_lbl = QLabel(
-            "Ingrese su token de API de <b>ipinfo.io</b> para el enriquecimiento de geolocalización e ISP.\n"
+            "Ingrese su token de API de <b>ipinfo.io</b> para el enriquecimiento de geolocalización, ISP y detección de VPN/Proxy.\n"
             "Si no posee token, deje el campo vacío (se mostrarán únicamente IPs y timestamps)."
         )
         info_lbl.setWordWrap(True)
@@ -203,8 +203,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("IP Analyzer v2.2 - (Sin IA / Alta Velocidad Local)")
-        self.resize(1100, 780)
-        self.setMinimumSize(900, 600)
+        self.resize(1150, 780)
+        self.setMinimumSize(950, 600)
 
         self.ipinfo_token = ""
         self.full_results: List[Dict[str, Any]] = []
@@ -317,7 +317,7 @@ class MainWindow(QMainWindow):
         filter_box = QHBoxLayout()
         filter_box.addWidget(QLabel("🔍 Buscar en Resultados:"))
         self.search_entry = QLineEdit()
-        self.search_entry.setPlaceholderText("Filtrar por IP, ISP, País, Timestamp...")
+        self.search_entry.setPlaceholderText("Filtrar por IP, ISP, VPN, País, Timestamp...")
         self.search_entry.textChanged.connect(self._filter_table)
         filter_box.addWidget(self.search_entry)
 
@@ -336,8 +336,8 @@ class MainWindow(QMainWindow):
         res_vbox.addLayout(filter_box)
 
         # Results Table
-        self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(["Nº", "IP Address", "Timestamp (UTC)", "Timestamp Conv.", "ISP / Error", "Ubicación", "Hostname"])
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(["Nº", "IP Address", "Timestamp (UTC)", "Timestamp Conv.", "ISP / Error", "Tipo Red / Privacidad", "Ubicación", "Hostname"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
@@ -453,7 +453,7 @@ class MainWindow(QMainWindow):
         if self.ipinfo_token:
             self.status_bar.showMessage("Listo. Token IPInfo configurado.", 5000)
         else:
-            self.status_bar.showMessage("Modo Local Activo (Sin Token IPInfo). Geolocalización limitada.", 5000)
+            self.status_bar.showMessage("Modo Local Activo (Sin Token IPInfo). Geolocalización y VPN limitados.", 5000)
 
     def _manage_token(self):
         dialog = ApiTokenDialog(self, self.ipinfo_token)
@@ -581,8 +581,20 @@ class MainWindow(QMainWindow):
             self.table.setItem(row_idx, 2, QTableWidgetItem(str(item.get("timestamp_utc", ""))))
             self.table.setItem(row_idx, 3, QTableWidgetItem(str(item.get("timestamp_converted", ""))))
             self.table.setItem(row_idx, 4, QTableWidgetItem(str(item.get("isp", ""))))
-            self.table.setItem(row_idx, 5, QTableWidgetItem(str(item.get("location", ""))))
-            self.table.setItem(row_idx, 6, QTableWidgetItem(str(item.get("hostname", ""))))
+
+            # Privacy status item
+            priv_item = QTableWidgetItem(str(item.get("privacy_status", "")))
+            priv_str = str(item.get("privacy_status", ""))
+            if "VPN" in priv_str or "Proxy" in priv_str or "TOR" in priv_str:
+                priv_item.setForeground(QColor("#d9534f")) # Red highlight for VPN/Proxy
+            elif "Hosting" in priv_str:
+                priv_item.setForeground(QColor("#f0ad4e")) # Orange highlight for hosting
+            elif "Residencial" in priv_str:
+                priv_item.setForeground(QColor("#5cb85c")) # Green highlight for real residential IP
+
+            self.table.setItem(row_idx, 5, priv_item)
+            self.table.setItem(row_idx, 6, QTableWidgetItem(str(item.get("location", ""))))
+            self.table.setItem(row_idx, 7, QTableWidgetItem(str(item.get("hostname", ""))))
 
         self.lbl_result_count.setText(f"Resultados: {len(prep_data)} IPs")
 
@@ -620,6 +632,7 @@ class MainWindow(QMainWindow):
                 combined_text = " ".join([
                     str(prep.get("ip_address", "")),
                     str(prep.get("isp", "")),
+                    str(prep.get("privacy_status", "")),
                     str(prep.get("location", "")),
                     str(prep.get("hostname", "")),
                     str(prep.get("timestamp_utc", "")),
@@ -702,7 +715,7 @@ class MainWindow(QMainWindow):
             self,
             "Acerca de IP Analyzer",
             "<h3>IP Analyzer v2.2</h3>"
-            "<p>Herramienta avanzada de escritorio para análisis, geolocalización y procesamiento de direcciones IP y timestamps en documentos de red e investigaciones forenses digital.</p>"
+            "<p>Herramienta avanzada de escritorio para análisis, geolocalización, detección de VPN/Proxy y procesamiento de direcciones IP y timestamps en documentos de red e investigaciones forenses digital.</p>"
             "<p><b>Desarrollado por:</b> Diego A. Rábalo</p>"
             "<p>Despliegue local rápido y seguro sin IA externa.</p>"
         )
