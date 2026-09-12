@@ -6,10 +6,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-import qtawesome as qta
-
 from PySide6.QtCore import Qt, QThread, Signal, QObject
-from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QAction, QColor
+from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QAction, QColor, QIcon
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QPushButton, QComboBox,
@@ -30,27 +28,34 @@ import processing
 
 logger = logging.getLogger(__name__)
 
-# --- Icon Constants (FontAwesome via qtawesome) ---
-ICONS = {
-    'eye': qta.icon('fa5s.eye', color='#475569'),
-    'eye_slash': qta.icon('fa5s.eye-slash', color='#475569'),
-    'plug': qta.icon('fa5s.plug', color='#475569'),
-    'save': qta.icon('fa5s.save', color='#FFFFFF'),
-    'folder_open': qta.icon('fa5s.folder-open', color='#3B82F6'),
-    'file': qta.icon('fa5s.file', color='#3B82F6'),
-    'chart_bar': qta.icon('fa5s.chart-bar', color='#3B82F6'),
-    'building': qta.icon('fa5s.building', color='#3B82F6'),
-    'globe': qta.icon('fa5s.globe-americas', color='#3B82F6'),
-    'lock': qta.icon('fa5s.lock', color='#3B82F6'),
-    'key': qta.icon('fa5s.key', color='#475569'),
-    'play': qta.icon('fa5s.play', color='#FFFFFF'),
-    'trash': qta.icon('fa5s.trash', color='#475569'),
-    'clipboard': qta.icon('fa5s.clipboard-list', color='#475569'),
-    'sync': qta.icon('fa5s.sync', color='#475569'),
-    'times': qta.icon('fa5s.times', color='#475569'),
-    'info': qta.icon('fa5s.info-circle', color='#475569'),
-    'file_export': qta.icon('fa5s.file-export', color='#475569'),
-}
+# Icons populated after QApplication in main()
+ICONS = {}
+
+
+def init_icons():
+    """Initialize FontAwesome icons via qtawesome. Must be called AFTER QApplication."""
+    import qtawesome as qta
+    global ICONS
+    ICONS = {
+        'eye': qta.icon('fa5s.eye', color='#475569'),
+        'eye_slash': qta.icon('fa5s.eye-slash', color='#475569'),
+        'plug': qta.icon('fa5s.plug', color='#475569'),
+        'save': qta.icon('fa5s.save', color='#FFFFFF'),
+        'folder_open': qta.icon('fa5s.folder-open', color='#3B82F6'),
+        'file': qta.icon('fa5s.file', color='#3B82F6'),
+        'chart_bar': qta.icon('fa5s.chart-bar', color='#3B82F6'),
+        'building': qta.icon('fa5s.building', color='#3B82F6'),
+        'globe': qta.icon('fa5s.globe-americas', color='#3B82F6'),
+        'lock': qta.icon('fa5s.lock', color='#3B82F6'),
+        'key': qta.icon('fa5s.key', color='#475569'),
+        'play': qta.icon('fa5s.play', color='#FFFFFF'),
+        'trash': qta.icon('fa5s.trash', color='#475569'),
+        'clipboard': qta.icon('fa5s.clipboard-list', color='#475569'),
+        'sync': qta.icon('fa5s.sync', color='#475569'),
+        'times': qta.icon('fa5s.times', color='#475569'),
+        'info': qta.icon('fa5s.info-circle', color='#475569'),
+        'file_export': qta.icon('fa5s.file-export', color='#475569'),
+    }
 
 
 class QtLogHandler(logging.Handler):
@@ -200,7 +205,7 @@ class ApiTokenDialog(QDialog):
             self.show_cb.setIcon(ICONS['eye_slash'])
         else:
             self.show_cb.setText(" Mostrar")
-            self.show_cb.setIcon(ICONS['eye'])
+        self.show_cb.setIcon(ICONS['eye'])
 
     def _test_token(self):
         token = self.token_entry.text().strip()
@@ -234,7 +239,7 @@ class DropArea(QFrame):
         layout.setContentsMargins(10, 10, 10, 10)
 
         self.icon_label = QLabel()
-        self.icon_label.setPixmap(ICONS['folder_open'].pixmap(32, 32))
+        self.icon_label.setPixmap(ICONS['folder_open'].pixmap(48, 48))
         self.icon_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.icon_label)
 
@@ -293,7 +298,7 @@ class StatCard(QFrame):
 
         icon_lbl = QLabel()
         if icon:
-            icon_lbl.setPixmap(icon.pixmap(20, 20))
+            icon_lbl.setPixmap(icon.pixmap(28, 28))
         layout.addWidget(icon_lbl)
 
         text_layout = QVBoxLayout()
@@ -579,6 +584,35 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
+
+        # Set column widths for readability
+        header = self.table.horizontalHeader()
+        header.resizeSection(0, 40)   # N
+        header.resizeSection(1, 140)  # IP Address
+        header.resizeSection(2, 160)  # Timestamp UTC
+        header.resizeSection(3, 160)  # Timestamp Conv
+        header.resizeSection(4, 200)  # ISP
+        header.resizeSection(5, 200)  # Ubicacion
+        # Hostname stretches
+
+        # Fix alternating row colors to be subtle
+        self.table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #E2E8F0;
+                background-color: #FFFFFF;
+                alternate-background-color: #F8FAFC;
+                selection-background-color: #DBEAFE;
+                selection-color: #1E3A8A;
+                border: 1px solid #E2E8F0;
+                border-radius: 6px;
+                font-size: 11px;
+                color: #0F172A;
+            }
+            QTableWidget::item {
+                padding: 4px 6px;
+                color: #0F172A;
+            }
+        """)
         res_vbox.addWidget(self.table)
 
         self.splitter.addWidget(results_widget)
@@ -670,10 +704,15 @@ class MainWindow(QMainWindow):
             QTableWidget {
                 gridline-color: #E2E8F0;
                 background-color: #FFFFFF;
+                alternate-background-color: #F8FAFC;
                 selection-background-color: #DBEAFE;
                 selection-color: #1E3A8A;
                 border: 1px solid #E2E8F0;
                 border-radius: 6px;
+                font-size: 11px;
+            }
+            QTableWidget::item {
+                padding: 4px 6px;
             }
             QHeaderView::section {
                 background-color: #F1F5F9;
@@ -773,7 +812,7 @@ class MainWindow(QMainWindow):
             file_size_kb = path.stat().st_size / 1024
             size_str = f"{file_size_kb:.1f} KB" if file_size_kb < 1024 else f"{file_size_kb/1024:.2f} MB"
 
-            self.drop_area.icon_label.setPixmap(ICONS['file'].pixmap(32, 32))
+            self.drop_area.icon_label.setPixmap(ICONS['file'].pixmap(48, 48))
             self.drop_area.label.setText(f"<b>{path.name}</b><br><span style='font-size: 11px; color: #64748B;'>Tamano: {size_str}</span>")
             self.drop_area.set_file_selected_style()
             self.status_bar.showMessage(f"Archivo cargado correctamente: {path.name}")
@@ -978,7 +1017,7 @@ class MainWindow(QMainWindow):
         self.card_countries.set_value("0")
         self.card_private.set_value("0")
 
-        self.drop_area.icon_label.setPixmap(ICONS['folder_open'].pixmap(32, 32))
+        self.drop_area.icon_label.setPixmap(ICONS['folder_open'])
         self.drop_area.label.setText("Arrastre y suelte su archivo aqui (.txt, .log, .csv, .docx)<br><span style='font-size: 11px; color: #64748B;'>o haga clic en 'Seleccionar Archivo'</span>")
         self.drop_area.reset_style()
         self.status_bar.showMessage("Listo para iniciar un nuevo analisis.")
@@ -1046,6 +1085,7 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    init_icons()
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

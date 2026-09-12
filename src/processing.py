@@ -199,7 +199,12 @@ def process_ip_analysis(
             _report_progress(f"Procesando IP {idx+1}/{total_ips}", current_perc, f"IP: {ip}")
 
             ip_info = get_ip_info(ip, ipinfo_token or "", ip_info_cache)
-            if ip_info.get("error"): logger.warning(f"  -> Info IP Error para {ip}: {ip_info['error']}")
+            if ip_info.get("error"):
+                err_msg = ip_info['error']
+                if "Privada" in err_msg or "Loopback" in err_msg or "Link-Local" in err_msg:
+                    logger.debug(f"  IP {ip}: {err_msg} (ignorada)")
+                else:
+                    logger.warning(f"  -> Info IP Error para {ip}: {err_msg}")
 
             orig_dt_utc, conv_ts_fmt = parse_and_convert_timezone(ts_str, valid_target_tz)
 
