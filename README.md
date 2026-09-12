@@ -1,39 +1,83 @@
 # IP Analyzer v2.2 ⚡
+![IP Analyzer Banner](assets/imagenes/banner-github.png)
 
-Herramienta de escritorio y línea de comandos de alta velocidad para la extracción, análisis y enriquecimiento de direcciones IP desde diversas fuentes de texto.
+[![Python Version](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![GUI Framework](https://img.shields.io/badge/GUI-PySide6--Qt-green.svg)](https://www.qt.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Diseñada para analistas de seguridad e investigadores forenses digitales, la aplicación procesa archivos de texto y genera informes detallados de manera ultra rápida, de forma 100% local y determinista (sin dependencia de servicios de IA externos).
+**IP Analyzer** es una solución profesional de escritorio y línea de comandos diseñada para analistas de ciberseguridad, investigadores de fuentes abiertas (OSINT) y peritos forenses digitales.
 
-## Características Destacadas
-- ⚡ **Extracción Local Determinista Rápida:** Algoritmo local basado en patrones que identifica con precisión direcciones IP (IPv4 e IPv6) y sus marcas de tiempo asociadas en archivos `.txt`, `.docx`, `.csv` y `.log`.
-- 🌍 **Enriquecimiento de Datos:** Consulta la API de ipinfo.io para obtener información detallada de cada IP (ISP, geolocalización por ciudad, región, país y hostname). Se puede ejecutar en modo local si no se cuenta con token.
-- ⏰ **Conversión de Zona Horaria:** Parsea timestamps en diversos formatos y los convierte a la zona horaria elegida (UTC por defecto).
-- 📄 **Informes Detallados:** Genera informes completos en múltiples formatos (`.pdf`, `.csv`, `.json`, `.txt`) que incluyen:
-    - Hash SHA256 del archivo de entrada para verificación de integridad.
-    - Versión de la aplicación y metadatos del caso (investigador, juzgado/fiscalía, causa).
-    - Numeración de páginas y pie de página en reportes PDF.
+Permite la extracción, análisis, geolocalización y **detección automática de VPN/Proxy** sobre direcciones IP y marcas de tiempo (timestamps) contenidas en registros de auditoría, logs de red y documentos no estructurados.
+
+El motor de análisis es **100% determinista, ultra rápido y de procesamiento local**, garantizando privacidad absoluta de los datos analizados sin dependencia de APIs de IA externas.
+
+---
+
+## 🚀 Características Destacadas
+
+- ⚡ **Extracción Local Determinista Rápida:** Algoritmo de parseo que identifica al instante direcciones IP (IPv4 e IPv6) y sus marcas de tiempo asociadas en archivos `.txt`, `.log`, `.csv` y `.docx`.
+- 🕵️ **Detección de VPN, Proxy, TOR y Datacenter:** Clasifica automáticamente si la IP corresponde a un usuario residencial real o si está enmascarada detrás de servicios VPN (NordVPN, ExpressVPN, PIA, M247, etc.), Proxies, Nodos de salida TOR o Datacenters / Cloud (AWS, Hetzner, DigitalOcean, OVH).
+- 🌍 **Geolocalización e ISP:** Enriquecimiento de datos con `ipinfo.io` (ciudad, región, país, ISP y hostname). Capaz de operar en modo offline o sin token si es requerido.
+- ⏰ **Conversión Universal de Zonas Horarias:** Convierte automáticamente cualquier timestamp al huso horario solicitado (UTC, UTC-3, etc.).
+- 📑 **Generación de Informes Forenses:** Exportación completa a `.pdf`, `.csv`, `.json` y `.txt` con metadatos del caso (investigador, juzgado/fiscalía, causa/referencia) y hash **SHA256** del archivo original para mantener la cadena de custodia de evidencia digital.
 - 🖥️ **Interfaz Gráfica Moderna (PySide6 / Qt):**
-    - Soporte para arrastrar y soltar archivos (Drag & Drop).
-    - Búsqueda y filtrado en tiempo real por término o país.
-    - Indicador de progreso y consola de log del proceso.
-- ⌨️ **CLI Potente:** Interfaz de línea de comandos para automatizar análisis e integración en scripts.
+  - Área **Drag & Drop** para arrastrar archivos directamente.
+  - Búsqueda global y filtrado interactivo en tiempo real por país o tipo de red.
+  - Ejecución asíncrona multihilo (`QThread`) para mantener la fluidez de la interfaz.
+  - Consola de logs integrada y barra de progreso.
 
 ---
 
-## Requisitos del Sistema
-- Python 3.8 o superior.
-- Conexión a internet opcional para consultas de geolocalización con `ipinfo.io`.
+## 🖼️ Capturas de Pantalla (Snapshots)
+
+### Interfaz Gráfica Principal (PySide6 / Qt)
+![Interfaz Gráfica Principal](assets/screenshots/main-window.png)
+
+### Ejemplo de Archivo de Log de Entrada
+![Ejemplo Log Entrada](assets/screenshots/unestructured-log.png)
+
+### Resultados y Modelo de Informe
+![Resultado del Análisis](assets/screenshots/report-model.png)
 
 ---
 
-## Instalación desde Código Fuente
-1. **Clona el repositorio:**
+## 📋 Ejemplo de Informe Generado
+
+```text
+====================================================================================================================================================================================
+                                                                 INFORME DE ANÁLISIS DE IPs, ISPs Y VPN/PRIVACIDAD
+====================================================================================================================================================================================
+
+--- Datos del Caso ---
+SHA256 del Archivo de Entrada: 8a7f92b3c...1e902
+Versión de la Aplicación:       IP Analyzer v2.2
+Archivo Origen:                unstructured_log.txt
+Investigador:                  Lic. Diego A. Rábalo
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+                                                                      Resultados (Zona Horaria Aplicada: UTC)
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Nº   | IP Address                       | Timestamp (UTC)         | Timestamp (UTC)              | ISP / Error              | Tipo Red / Privacidad      | Ubicación                 | Hostname
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 1   | 202.216.224.15                   | 2024-08-21 11:30:00 UTC | 2024-08-21 11:30:00 UTC+0000 | FreeBit Co.,Ltd.         | Residencial / IP Real      | Tokyo, Tokyo, JP          | nsc05.dti.ad.jp
+ 2   | 185.220.101.5                    | 2024-08-21 12:15:00 UTC | 2024-08-21 12:15:00 UTC+0000 | M247 Europe SRL          | TOR Exit Node / VPN        | Bucharest, RO             | tor-exit-node.m247.com
+ 3   | 101.160.0.1                      | 2024-08-21 14:45:00 UTC | 2024-08-21 14:45:00 UTC+0000 | Telstra Limited          | Residencial / IP Real      | Townsville, AU            | cpe-101-160-0-1.bpjl...
+ 4   | 78.46.0.1                        | 2024-08-21 23:00:00 UTC | 2024-08-21 23:00:00 UTC+0000 | Hetzner Online GmbH      | Hosting / Datacenter       | Nürnberg, DE              | static.1.0.46.78.clie...
+====================================================================================================================================================================================
+```
+
+---
+
+## 🛠️ Instalación y Configuración
+
+### 📦 Instalación desde Código Fuente
+1. **Clonar repositorio:**
    ```bash
-   git clone https://github.com/tu_usuario/tu_repositorio.git
-   cd tu_repositorio
+   git clone https://github.com/mikear/IP-Analyzer.git
+   cd IP-Analyzer
    ```
 
-2. **Crea un entorno virtual:**
+2. **Crear entorno virtual:**
    ```bash
    python -m venv venv
    # En Windows:
@@ -42,41 +86,42 @@ Diseñada para analistas de seguridad e investigadores forenses digitales, la ap
    source venv/bin/activate
    ```
 
-3. **Instala las dependencias:**
+3. **Instalar dependencias:**
    ```bash
    pip install -r requirements.txt
    ```
 
----
-
-## Configuración
-Para enriquecer las IPs con ISP y ubicación:
-1. Obten un token en [ipinfo.io](https://ipinfo.io/signup).
-2. Guárdalo mediante el diálogo de la GUI (`Menú Archivo > Gestionar Token IPInfo...`) o creando un archivo `.env` en la raíz con:
-   ```env
-   IPINFO_TOKEN=tu_token_aqui
-   ```
+### 🔑 Configuración del Token (IPInfo API)
+Para habilitar el enriquecimiento de geolocalización, ISP y detección de VPN:
+- Inicia la interfaz gráfica e ingresa tu token desde el menú **`Archivo > Gestionar Token IPInfo...`**.
+- O bien, crea un archivo `.env` en el directorio raíz:
+  ```env
+  IPINFO_TOKEN=tu_token_aqui
+  ```
 
 ---
 
-## Uso
+## 🖥️ Modo de Uso
 
-### 🖥️ Interfaz Gráfica (GUI)
+### Interfaz Gráfica (GUI)
 ```bash
 python src/ip_analyzer_gui.py
 ```
-- Arrastra el archivo al área designada o haz clic en "Seleccionar...".
-- Selecciona la zona horaria deseada.
-- Opcionalmente añade metadatos del caso.
-- Haz clic en **"Iniciar Análisis"**.
-- Filtra o busca resultados en la tabla y exporta el informe en PDF, CSV, JSON o TXT.
+1. Arrastra tu archivo al panel de entrada o usa el botón **"Seleccionar..."**.
+2. Selecciona la zona horaria de conversión.
+3. (Opcional) Ingresa metadatos del caso (Investigador, Juzgado/Fiscalía, Causa).
+4. Haz clic en **"🚀 Iniciar Análisis"**.
+5. Examina los resultados, busca por coincidencia o filtra por país.
+6. Exporta el reporte legal desde `Archivo > Exportar Informe...` (PDF, CSV, JSON, TXT).
 
-### ⌨️ Línea de Comandos (CLI)
+### Línea de Comandos (CLI)
+Ideal para integración en scripts o análisis masivo:
 ```bash
-python src/main_cli.py "ruta/al/archivo.txt" -o "ruta/informe_salida" -tz "America/Argentina/Buenos_Aires"
+python src/main_cli.py "C:\evidencia\log_auditoria.txt" -o "C:\informes\reporte_caso123" -tz "America/Argentina/Buenos_Aires" -m "Investigador=Diego Rabalo" -m "Causa=123/2025"
 ```
 
 ---
 
-## Licencia
-Proyecto bajo Licencia MIT.
+## 📄 Licencia y Créditos
+- Licencia MIT.
+- Desarrollado por **Diego A. Rábalo** ([LinkedIn](https://www.linkedin.com/in/rabalo)).

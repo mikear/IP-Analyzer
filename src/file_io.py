@@ -242,7 +242,7 @@ class IPAnalyzerPDF(FPDF):
 
         # Calculate width of the combined text
         combined_text_width = self.get_string_width(footer_text_part1 + footer_text_part2)
-        
+
         # Calculate X position for centering
         center_x = (self.w - combined_text_width) / 2
         self.set_x(center_x)
@@ -256,7 +256,7 @@ class IPAnalyzerPDF(FPDF):
         self.set_text_color(0, 0, 255) # Blue color for link
         self.set_font("Helvetica", size=8, style='U') # Underline for link
         self.cell(self.get_string_width(footer_text_part2), 10, footer_text_part2, 0, 0, 'L', link=linkedin_url)
-        
+
         # Reset color and font for subsequent text (if any)
         self.set_text_color(0)
         self.set_font("Helvetica", size=8) # Reset font
@@ -288,7 +288,7 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
         # Add Total Pages to metadata for display
         # This will be a placeholder for now, updated after content is added
         pdf.multi_cell(page_width, 4.5, f"  Total páginas: {{nb}}", ln=True) # Placeholder for total pages
-        
+
         # Print other metadata
         for k, v in metadata.items():
             if k not in ["input_file_sha256", "app_version", "analysis_start_time", "analysis_duration_seconds", "input_filepath", "target_timezone"]:
