@@ -4,7 +4,7 @@ venv/
 env/
 .env
 
-# Archivos de configuración de IDEs
+# Archivos de configuracion de IDEs
 .idea/
 .vscode/
 *.swp
@@ -15,14 +15,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Artefactos de compilación y distribución
+# Artefactos de compilacion y distribucion
 build/
 dist/
 *.spec
 *.egg-info/
 /ip_analyzer_gui.spec
-
-
 
 # Directorio de salida de Inno Setup
 Output/
@@ -30,7 +28,7 @@ Output/
 # Directorios temporales
 temp_unzip/
 
-# Archivos de dependencias (si se usan otras herramientas)
+# Archivos de dependencias
 .pytest_cache/
 .mypy_cache/
 .tox/
@@ -43,5 +41,10 @@ Thumbs.db
 # Archivos de backup
 *.zip
 
-# Documentación
+# Archivos de salida / export
+export/
+Informe_IP_*.json
+Informe_IP_*.txt
+
+# Documentacion
 APIS.txt

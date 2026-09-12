@@ -232,6 +232,7 @@ class IPAnalyzerPDF(FPDF):
 
         # Custom footer text (centered)
         app_ver_raw = self.app_metadata.get("app_version") or "IP Analyzer v2.2"
+        app_ver_raw = app_ver_raw.encode('latin-1', errors='ignore').decode('latin-1')
         app_name = app_ver_raw.split(" v")[0] if " v" in app_ver_raw else app_ver_raw
         app_version = app_ver_raw
         developer_name = "Diego A. Rábalo" # Updated developer name
@@ -283,7 +284,8 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
         if "input_file_sha256" in metadata and metadata["input_file_sha256"]:
             pdf.multi_cell(page_width, 4.5, f"  SHA256 del Archivo de Entrada: {metadata['input_file_sha256']}", ln=True)
         if "app_version" in metadata and metadata["app_version"]:
-            pdf.multi_cell(page_width, 4.5, f"  Versión de la Aplicación: {metadata['app_version']}", ln=True)
+            app_ver_safe = metadata['app_version'].encode('latin-1', errors='ignore').decode('latin-1')
+            pdf.multi_cell(page_width, 4.5, f"  Versión de la Aplicación: {app_ver_safe}", ln=True)
         
         # Add Total Pages to metadata for display
         # This will be a placeholder for now, updated after content is added
@@ -292,7 +294,8 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
         # Print other metadata
         for k, v in metadata.items():
             if k not in ["input_file_sha256", "app_version", "analysis_start_time", "analysis_duration_seconds", "input_filepath", "target_timezone"]:
-                pdf.multi_cell(page_width, 4.5, f"  {k.replace('_',' ').title()}: {v}", ln=True)
+                safe_v = str(v).encode('latin-1', errors='ignore').decode('latin-1') if v else ''
+                pdf.multi_cell(page_width, 4.5, f"  {k.replace('_',' ').title()}: {safe_v}", ln=True)
         pdf.ln(4)
 
     requested_tz = metadata.get("zona_horaria_solicitada_gui", metadata.get("zona_horaria_cli", "UTC"))
