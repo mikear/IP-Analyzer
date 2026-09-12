@@ -5,4 +5,3 @@ python-dateutil
 fpdf2
 pytz
 PySide6
-qtawesome
