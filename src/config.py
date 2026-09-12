@@ -47,8 +47,8 @@ def load_config() -> Tuple[str, str]:
         logger.warning(f"No se encontró archivo .env en {env_path} o directorios sup.")
     return "", ipinfo_token
 
-def save_api_keys(gemini_key: str = "", ipinfo_token: str = "") -> bool:
-    """Guarda o actualiza las claves API en el archivo .env encontrado/designado."""
+def save_api_keys(ipinfo_token: str = "") -> bool:
+    """Guarda o actualiza el token de API IPInfo en el archivo .env encontrado/designado."""
     if not _dotenv_available:
         logger.error("Falta 'python-dotenv'. No se pueden guardar claves API.")
         return False

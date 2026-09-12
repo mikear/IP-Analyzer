@@ -19,23 +19,12 @@ El motor de análisis es **100% determinista, ultra rápido y de procesamiento l
 - 🕵️ **Detección de VPN, Proxy, TOR y Datacenter:** Clasifica automáticamente si la IP corresponde a un usuario residencial real o si está enmascarada detrás de servicios VPN (NordVPN, ExpressVPN, PIA, M247, etc.), Proxies, Nodos de salida TOR o Datacenters / Cloud (AWS, Hetzner, DigitalOcean, OVH).
 - 🌍 **Geolocalización e ISP:** Enriquecimiento de datos con `ipinfo.io` (ciudad, región, país, ISP y hostname). Capaz de operar en modo offline o sin token si es requerido.
 - ⏰ **Conversión Universal de Zonas Horarias:** Convierte automáticamente cualquier timestamp al huso horario solicitado (UTC, UTC-3, etc.).
-- 📑 **Generación de Informes Forenses:** Exportación completa a `.pdf`, `.csv`, `.json` y `.txt` con metadatos del caso (investigador, juzgado/fiscalía, causa/referencia) Para mantener la cadena de custodia de evidencia digital y hash **SHA256** del archivo original.
+- 📑 **Generación de Informes Forenses:** Exportación completa a `.pdf`, `.csv`, `.json` y `.txt` con metadatos del caso (investigador, juzgado/fiscalía, causa/referencia) y hash **SHA256** del archivo original para mantener la cadena de custodia de evidencia digital.
 - 🖥️ **Interfaz Gráfica Moderna (PySide6 / Qt):**
   - Área **Drag & Drop** para arrastrar archivos directamente.
   - Búsqueda global y filtrado interactivo en tiempo real por país o tipo de red.
   - Ejecución asíncrona multihilo (`QThread`) para mantener la fluidez de la interfaz.
   - Consola de logs integrada y barra de progreso.
-- 📦 **Soporte Ejecutable Standalone (.exe):** Uso sin conocimientos de Python descargando la versión ejecutable o mediante PyInstaller.
-
----
-
-## 💾 Descargas Directas / Ejecutable (.exe)
-
-Para usuarios que desean utilizar **IP Analyzer** sin instalar Python ni configurar entornos de comandos:
-
-1. Ve a la sección de [**GitHub Releases / Publicaciones**](https://github.com/mikear/IP-Analyzer/releases) del repositorio.
-2. Descarga el ejecutable ejecutable listo para usar: **`IP_Analyzer.exe`**.
-3. Haz doble clic en el archivo descargado para iniciar la aplicación gráfica directamente.
 
 ---
 
@@ -79,7 +68,7 @@ Nº   | IP Address                       | Timestamp (UTC)         | Timestamp (
 
 ---
 
-## 🛠️ Instalación y Configuración (Para Desarrolladores)
+## 🛠️ Instalación y Configuración
 
 ### 📦 Instalación desde Código Fuente
 1. **Clonar repositorio:**
@@ -130,18 +119,6 @@ Ideal para integración en scripts o análisis masivo:
 ```bash
 python src/main_cli.py "C:\evidencia\log_auditoria.txt" -o "C:\informes\reporte_caso123" -tz "America/Argentina/Buenos_Aires" -m "Investigador=Diego Rabalo" -m "Causa=123/2025"
 ```
-
----
-
-## 📦 Compilación de Ejecutable (.exe Standalone)
-
-Si deseas generar tu propio ejecutable independiente desde el código fuente:
-
-```bash
-pip install pyinstaller
-pyinstaller --noconfirm --onefile --windowed --name "IP_Analyzer" --icon "assets/app_icon.ico" --paths src src/ip_analyzer_gui.py
-```
-El archivo ejecutable resultante se ubicará en la carpeta **`dist/IP_Analyzer.exe`** (o `dist/IP_Analyzer` en Linux/macOS).
 
 ---
 
