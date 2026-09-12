@@ -29,13 +29,18 @@ import processing
 logger = logging.getLogger(__name__)
 
 
-def _make_icon(svg_path_data: str, color: str = "#3B82F6", size: int = 24) -> QIcon:
-    """Create a QIcon from an SVG path string."""
+def _make_icon(svg_path_data: str, color: str = "#3B82F6", size: int = 48) -> QIcon:
+    """Create a QIcon from an SVG path string with proper scaling."""
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="{size}" height="{size}">
       <path fill="{color}" d="{svg_path_data}"/>
     </svg>'''
-    pixmap = QPixmap()
-    pixmap.loadFromData(svg.encode('utf-8'))
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    loader = QPixmap()
+    loader.loadFromData(svg.encode('utf-8'))
+    painter = QPainter(pixmap)
+    painter.drawPixmap(0, 0, size, size, loader)
+    painter.end()
     return QIcon(pixmap)
 
 
@@ -266,7 +271,7 @@ class DropArea(QFrame):
         layout.setContentsMargins(10, 10, 10, 10)
 
         self.icon_label = QLabel()
-        self.icon_label.setPixmap(_Icons.folder_open().pixmap(32, 32))
+        self.icon_label.setPixmap(_Icons.folder_open().pixmap(48, 48))
         self.icon_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.icon_label)
 
@@ -325,7 +330,7 @@ class StatCard(QFrame):
 
         icon_lbl = QLabel()
         if icon:
-            icon_lbl.setPixmap(icon.pixmap(20, 20))
+            icon_lbl.setPixmap(icon.pixmap(28, 28))
         layout.addWidget(icon_lbl)
 
         text_layout = QVBoxLayout()
@@ -611,6 +616,29 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
+
+        # Set column widths for readability
+        header = self.table.horizontalHeader()
+        header.resizeSection(0, 40)   # N
+        header.resizeSection(1, 140)  # IP Address
+        header.resizeSection(2, 160)  # Timestamp UTC
+        header.resizeSection(3, 160)  # Timestamp Conv
+        header.resizeSection(4, 200)  # ISP
+        header.resizeSection(5, 200)  # Ubicacion
+        # Hostname stretches
+
+        # Fix alternating row colors to be subtle
+        self.table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #E2E8F0;
+                background-color: #FFFFFF;
+                alternate-background-color: #F8FAFC;
+                selection-background-color: #DBEAFE;
+                selection-color: #1E3A8A;
+                border: 1px solid #E2E8F0;
+                border-radius: 6px;
+            }
+        """)
         res_vbox.addWidget(self.table)
 
         self.splitter.addWidget(results_widget)
@@ -702,10 +730,15 @@ class MainWindow(QMainWindow):
             QTableWidget {
                 gridline-color: #E2E8F0;
                 background-color: #FFFFFF;
+                alternate-background-color: #F8FAFC;
                 selection-background-color: #DBEAFE;
                 selection-color: #1E3A8A;
                 border: 1px solid #E2E8F0;
                 border-radius: 6px;
+                font-size: 11px;
+            }
+            QTableWidget::item {
+                padding: 4px 6px;
             }
             QHeaderView::section {
                 background-color: #F1F5F9;
@@ -805,7 +838,7 @@ class MainWindow(QMainWindow):
             file_size_kb = path.stat().st_size / 1024
             size_str = f"{file_size_kb:.1f} KB" if file_size_kb < 1024 else f"{file_size_kb/1024:.2f} MB"
 
-            self.drop_area.icon_label.setPixmap(_Icons.file().pixmap(32, 32))
+            self.drop_area.icon_label.setPixmap(_Icons.file().pixmap(48, 48))
             self.drop_area.label.setText(f"<b>{path.name}</b><br><span style='font-size: 11px; color: #64748B;'>Tamano: {size_str}</span>")
             self.drop_area.set_file_selected_style()
             self.status_bar.showMessage(f"Archivo cargado correctamente: {path.name}")
