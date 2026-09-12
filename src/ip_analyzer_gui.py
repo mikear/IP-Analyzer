@@ -637,6 +637,12 @@ class MainWindow(QMainWindow):
                 selection-color: #1E3A8A;
                 border: 1px solid #E2E8F0;
                 border-radius: 6px;
+                font-size: 11px;
+                color: #0F172A;
+            }
+            QTableWidget::item {
+                padding: 4px 6px;
+                color: #0F172A;
             }
         """)
         res_vbox.addWidget(self.table)
