@@ -1,7 +1,9 @@
 import logging
 import ipaddress
 import re
+import time
 from typing import Dict, List, Optional, Any
+from urllib.parse import quote
 import requests
 
 from config import IPINFO_URL
@@ -13,12 +15,25 @@ IPV4_REGEX = re.compile(
     r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
 )
 
-# Pattern for IPv6 (matches general hex group structure, validated via ipaddress)
-IPV6_REGEX = re.compile(
-    r'\b(?:[0-9a-fA-F]{1,4}:){1,7}:?|:(?::[0-9a-fA-F]{1,4}){1,7}\b|'
-    r'\b(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b|'
-    r'\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b'
+# IPv6: permissive candidate token, then longest-valid-prefix reduction via ipaddress.
+# A fixed alternation regex truncates addresses (fe80::1 -> fe80::) so it is not used here.
+IPV6_CANDIDATE_REGEX = re.compile(r'[0-9a-fA-F:]+(?:\.\d{1,3}){0,3}')
+
+_TOKEN_IN_MSG_REGEX = re.compile(r'token=[^&\s]+')
+
+# Deterministic errors worth caching (a retry would return the same answer).
+_DETERMINISTIC_ERRORS = (
+    "IP Inválida (Formato)", "IP Inválida (Interno)", "Token IPinfo Faltante",
+    "Token Inválido/Prohibido", "No Encontrado (ipinfo)",
 )
+
+
+def _sanitize(msg: Any) -> str:
+    """Strip API tokens from anything logged (requests embeds the full URL in exceptions)."""
+    return _TOKEN_IN_MSG_REGEX.sub('token=***', str(msg))
+
+
+_session = requests.Session()
 
 # Broad timestamp regex patterns
 TIMESTAMP_PATTERNS = [
@@ -37,7 +52,9 @@ def validate_api_keys(ipinfo_token: Optional[str]) -> bool:
     if not ipinfo_token:
         return False
     try:
-        response = requests.get(f"https://ipinfo.io/8.8.8.8?token={ipinfo_token}", timeout=10)
+        response = _session.get(
+            f"https://ipinfo.io/8.8.8.8?token={quote(ipinfo_token.strip(), safe='')}", timeout=10
+        )
         if response.status_code == 200:
             logger.info("Token de ipinfo.io validado exitosamente.")
             return True
@@ -45,7 +62,7 @@ def validate_api_keys(ipinfo_token: Optional[str]) -> bool:
             logger.error(f"Error al validar token de ipinfo.io: HTTP {response.status_code}")
             return False
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error de red al validar token de ipinfo.io: {e}")
+        logger.error(f"Error de red al validar token de ipinfo.io: {_sanitize(e)}")
         return False
 
 def is_valid_ip(ip_str: str) -> bool:
@@ -58,6 +75,25 @@ def is_valid_ip(ip_str: str) -> bool:
     except ValueError:
         return False
 
+
+def extract_ipv6_candidates(text: str) -> List[str]:
+    """Extrae direcciones IPv6 válidas de un texto (prefijo válido más largo por token)."""
+    found: List[str] = []
+    for match in IPV6_CANDIDATE_REGEX.finditer(text):
+        token = match.group(0)
+        if ':' not in token:
+            continue
+        candidate = token
+        while candidate:
+            try:
+                ipaddress.ip_address(candidate)
+            except ValueError:
+                candidate = candidate[:-1]
+                continue
+            found.append(candidate)
+            break
+    return found
+
 def extract_ip_data_deterministic(text_content: str) -> List[Dict[str, str]]:
     """Extrae direcciones IP y sus timestamps asociados mediante parsing determinista."""
     if not text_content:
@@ -66,6 +102,7 @@ def extract_ip_data_deterministic(text_content: str) -> List[Dict[str, str]]:
     lines = text_content.splitlines()
     extracted_data: List[Dict[str, str]] = []
     seen_pairs = set()
+    duplicate_count = 0
 
     for line in lines:
         if not line.strip():
@@ -73,7 +110,7 @@ def extract_ip_data_deterministic(text_content: str) -> List[Dict[str, str]]:
 
         # Find all IPs in line
         ipv4_matches = IPV4_REGEX.findall(line)
-        ipv6_candidates = IPV6_REGEX.findall(line)
+        ipv6_candidates = extract_ipv6_candidates(line)
 
         ips_in_line = []
         for candidate in ipv4_matches + ipv6_candidates:
@@ -98,7 +135,14 @@ def extract_ip_data_deterministic(text_content: str) -> List[Dict[str, str]]:
             if pair not in seen_pairs:
                 seen_pairs.add(pair)
                 extracted_data.append({"ip_address": ip, "timestamp_str": found_ts})
+            else:
+                duplicate_count += 1
 
+    if duplicate_count:
+        logger.info(
+            f"Pares (IP, timestamp) duplicados omitidos: {duplicate_count} "
+            f"(eventos repetidos con la misma IP y timestamp)."
+        )
     logger.info(f"Extracción determinista completada: {len(extracted_data)} IPs/timestamps encontrados.")
     return extracted_data
 
@@ -146,58 +190,90 @@ def get_ip_info(ip_address: str, token: str, cache: Dict[str, Any]) -> Dict[str,
         logger.error(f"Interno: Falló conversión ipaddress para IP ya validada: {ip_address}")
         return result
 
-    url = IPINFO_URL.format(ip=ip_address, token=token)
+    url = IPINFO_URL.format(ip=quote(ip_address, safe=''), token=quote(token.strip(), safe=''))
     logger.debug(f"Consultando IPinfo para {ip_address}")
-    try:
-        response = requests.get(url, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        logger.debug(f"Respuesta IPinfo para {ip_address}: {str(data)[:200]}...")
 
-        org_field = data.get('org', ''); isp_val = 'N/A'
-        if isinstance(org_field, str) and org_field:
-            match = re.match(r"^(AS\d+)\s+(.*)", org_field, re.IGNORECASE)
-            if match: isp_val = match.group(2).strip()
-            else: isp_val = org_field
-        if not isp_val or isp_val == 'N/A': isp_val = data.get('isp', 'N/A')
+    max_attempts = 3
+    response = None
+    for attempt in range(max_attempts):
+        retryable = False
+        try:
+            response = _session.get(url, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout (15s) contactando ipinfo.io para {ip_address}.")
+            result["error"] = "Timeout IPinfo"
+            retryable = True
+        except requests.exceptions.HTTPError as http_err:
+            status = http_err.response.status_code if http_err.response is not None else 0
+            err_msg = f"Error HTTP {status} de ipinfo.io para {ip_address}"
+            try:
+                details = http_err.response.json().get('error', {}).get('message', '')
+                if details:
+                    err_msg += f" ({details})"
+            except Exception:
+                pass
+            if status in (401, 403):
+                err_msg += " (Token inválido?)"
+                result["error"] = "Token Inválido/Prohibido"
+            elif status == 404:
+                err_msg += " (IP no encontrada?)"
+                result["error"] = "No Encontrado (ipinfo)"
+            elif status == 429:
+                err_msg += " (Límite API?)"
+                result["error"] = "Límite API Excedido"
+                retryable = True
+            else:
+                result["error"] = f"HTTP Error {status}"
+            logger.error(_sanitize(err_msg))
+        except ValueError:
+            # JSON inválido: requests.exceptions.JSONDecodeError subclasea ValueError
+            body_preview = response.text[:200] if response is not None else "N/A"
+            logger.error(f"Respuesta inválida (no JSON) ipinfo.io ({ip_address}). Body: {body_preview}...")
+            result["error"] = "Respuesta Inválida"
+        except requests.exceptions.ConnectionError as conn_err:
+            logger.error(f"Error Conexión ipinfo.io ({ip_address}): {_sanitize(conn_err)}")
+            result["error"] = "Error de Conexión"
+            retryable = True
+        except requests.exceptions.RequestException as req_err:
+            logger.error(f"Error Red Genérico ipinfo.io ({ip_address}): {_sanitize(req_err)}")
+            result["error"] = "Error de Red"
+        except Exception as e:
+            logger.error(f"Error inesperado ipinfo ({ip_address}): {_sanitize(e)}", exc_info=True)
+            result["error"] = "Error Interno (IPinfo)"
+        else:
+            org_field = data.get('org', ''); isp_val = 'N/A'
+            if isinstance(org_field, str) and org_field:
+                match = re.match(r"^(AS\d+)\s+(.*)", org_field, re.IGNORECASE)
+                if match: isp_val = match.group(2).strip()
+                else: isp_val = org_field
+            if not isp_val or isp_val == 'N/A': isp_val = data.get('isp', 'N/A')
 
-        result.update({
-            "isp": isp_val if isp_val else "N/A",
-            "city": data.get('city') or "N/A",
-            "region": data.get('region') or "N/A",
-            "country": data.get('country') or "N/A",
-            "hostname": data.get('hostname') or "N/A",
-            "error": None
-        })
+            result.update({
+                "isp": isp_val if isp_val else "N/A",
+                "city": data.get('city') or "N/A",
+                "region": data.get('region') or "N/A",
+                "country": data.get('country') or "N/A",
+                "hostname": data.get('hostname') or "N/A",
+                "error": None
+            })
+            break
 
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout (15s) contactando ipinfo.io para {ip_address}.")
-        result["error"] = "Timeout IPinfo"
-    except requests.exceptions.HTTPError as http_err:
-        status = http_err.response.status_code
-        err_msg = f"Error HTTP {status} de ipinfo.io para {ip_address}"
-        try: details = http_err.response.json().get('error',{}).get('message',''); err_msg += f" ({details})" if details else ""
-        except: pass
-        if status in (401, 403): err_msg += " (Token inválido?)"; result["error"] = "Token Inválido/Prohibido"
-        elif status == 404: err_msg += " (IP no encontrada?)"; result["error"] = "No Encontrado (ipinfo)"
-        elif status == 429: err_msg += " (Límite API?)"; result["error"] = "Límite API Excedido"
-        else: result["error"] = f"HTTP Error {status}"
-        logger.error(err_msg)
-    except requests.exceptions.ConnectionError as conn_err:
-        logger.error(f"Error Conexión ipinfo.io ({ip_address}): {conn_err}")
-        result["error"] = "Error de Conexión"
-    except requests.exceptions.RequestException as req_err:
-        logger.error(f"Error Red Genérico ipinfo.io ({ip_address}): {req_err}")
-        result["error"] = "Error de Red"
-    except json.JSONDecodeError:
-        body_preview = response.text[:200] if 'response' in locals() else "N/A"
-        logger.error(f"Respuesta inválida (no JSON) ipinfo.io ({ip_address}). Body: {body_preview}...")
-        result["error"] = "Respuesta Inválida"
-    except Exception as e:
-        logger.error(f"Error inesperado ipinfo ({ip_address}): {e}", exc_info=True)
-        result["error"] = "Error Interno (IPinfo)"
+        if retryable and attempt < max_attempts - 1:
+            wait_s = 1.0 * (2 ** attempt)
+            logger.warning(
+                f"Reintentando consulta a ipinfo.io para {ip_address} en {wait_s:.0f}s "
+                f"(intento {attempt + 2} de {max_attempts})..."
+            )
+            time.sleep(wait_s)
+            continue
+        break
 
     for key in ["isp", "city", "region", "country", "hostname"]: result.setdefault(key, "N/A")
 
-    cache[ip_address] = result
+    # Solo se cachean éxitos y errores deterministas: un timeout/429 no debe marcar la IP como fallida.
+    final_error = result.get("error")
+    if final_error is None or final_error in _DETERMINISTIC_ERRORS:
+        cache[ip_address] = result
     return result

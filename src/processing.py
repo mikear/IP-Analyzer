@@ -1,7 +1,5 @@
 import logging
 import re
-import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
@@ -15,12 +13,19 @@ try:
     _use_zoneinfo = True
 except ImportError:
     _use_zoneinfo = False
+    ZoneInfoNotFoundError = None  # type: ignore[assignment]
 
 try:
     import pytz
     from pytz import UnknownTimeZoneError
 except ImportError:
     pytz = None
+    UnknownTimeZoneError = None  # type: ignore[assignment]
+
+# Clases de error de zona horaria disponibles en esta instalación (evita NameError en except).
+_TZ_ERRORS = tuple(
+    exc for exc in (ZoneInfoNotFoundError, UnknownTimeZoneError) if isinstance(exc, type)
+) or (Exception,)
 
 try:
     from dateutil import parser as date_parser
@@ -40,7 +45,7 @@ try:
         _gmt_zones_present_zi = True
         for i in range(-14, 15):
             try:
-                ZoneInfo(f'Etc/GMT{"+ " if i <= 0 else ""}{-i}')
+                ZoneInfo(f'Etc/GMT{"+" if i <= 0 else ""}{-i}')
             except ZoneInfoNotFoundError:
                 _gmt_zones_present_zi = False
                 break
@@ -56,11 +61,40 @@ if not _use_zoneinfo:
             logger.info("Usando 'pytz' para zonas horarias.")
             VALID_TIMEZONES.update(set(pytz.all_timezones))
             for i in range(-14, 15):
-                VALID_TIMEZONES.add(f'Etc/GMT{"+ " if i <= 0 else ""}{-i}')
+                VALID_TIMEZONES.add(f'Etc/GMT{"+" if i <= 0 else ""}{-i}')
     except Exception:
         pytz = None
 
 SORTED_VALID_TIMEZONES = sorted(list(VALID_TIMEZONES))
+
+# Apache/nginx Common Log Format: '21/Aug/2024:13:09:43 +0000' (dateutil exige espacio)
+_CLF_TIMESTAMP_REGEX = re.compile(r'^(\d{2}/[A-Za-z]{3}/\d{4}):(\d{2}:\d{2}:\d{2})(.*)$')
+# Fecha numérica DD/MM/YYYY o MM/DD/YYYY
+_NUMERIC_DATE_REGEX = re.compile(r'^(\d{2})[-/.](\d{2})[-/.](\d{4})')
+
+_warned_ambiguous_date = False
+_warned_naive_timestamp = False
+
+
+def validate_timezone(tz_str: str) -> bool:
+    """Comprueba que la zona horaria existe en esta instalación (sin llamar a la API)."""
+    if not tz_str or tz_str.isspace():
+        return False
+    if tz_str in VALID_TIMEZONES:
+        return True
+    if _use_zoneinfo:
+        try:
+            ZoneInfo(tz_str)
+            return True
+        except Exception:
+            pass
+    if pytz:
+        try:
+            pytz.timezone(tz_str)
+            return True
+        except Exception:
+            return False
+    return False
 
 def _check_critical_dependencies() -> List[str]:
     """Verifica las dependencias mínimas para el funcionamiento básico."""
@@ -80,9 +114,37 @@ def parse_and_convert_timezone(
         return None, "Error: Falta Dep."
 
     original_dt_aware_utc: Optional[datetime] = None
+    global _warned_ambiguous_date, _warned_naive_timestamp
+
+    ts_to_parse = timestamp_str.strip()
+    dayfirst = False
+
+    # 1) Apache/nginx CLF: 21/Aug/2024:13:09:43 +0000 -> 21/Aug/2024 13:09:43 +0000
+    clf_match = _CLF_TIMESTAMP_REGEX.match(ts_to_parse)
+    if clf_match:
+        ts_to_parse = f"{clf_match.group(1)} {clf_match.group(2)}{clf_match.group(3)}"
+
+    # 2) Fechas numéricas DD/MM/YYYY: se asume día primero (formato habitual en informes)
+    num_match = _NUMERIC_DATE_REGEX.match(ts_to_parse)
+    if num_match:
+        dayfirst = True
+        day, month = int(num_match.group(1)), int(num_match.group(2))
+        if day <= 12 and month <= 12 and not _warned_ambiguous_date:
+            _warned_ambiguous_date = True
+            logger.warning(
+                f"Fecha ambigua DD/MM vs MM/DD detectada ('{timestamp_str}'). "
+                f"Se asume formato DD/MM (día primero)."
+            )
+
     try:
-        original_dt = date_parser.parse(timestamp_str, ignoretz=False, fuzzy=False)
+        original_dt = date_parser.parse(ts_to_parse, ignoretz=False, fuzzy=False, dayfirst=dayfirst)
         if original_dt.tzinfo is None or original_dt.tzinfo.utcoffset(original_dt) is None:
+            if not _warned_naive_timestamp:
+                _warned_naive_timestamp = True
+                logger.warning(
+                    "Se encontraron timestamps sin offset de zona horaria: se interpretan como UTC. "
+                    "Si el origen usa hora local, revise el resultado."
+                )
             original_dt_aware_utc = original_dt.replace(tzinfo=dateutil_UTC)
         else:
             original_dt_aware_utc = original_dt.astimezone(dateutil_UTC)
@@ -111,8 +173,9 @@ def parse_and_convert_timezone(
             return original_dt_aware_utc, formatted_converted
 
         converted_dt = original_dt_aware_utc.astimezone(target_tz_obj)
-        formatted_converted = converted_dt.strftime('%Y-%m-%d %H:%M:%S %Z%z')
-    except (ZoneInfoNotFoundError, UnknownTimeZoneError) as tz_lookup_err:
+        # Solo offset numerico: %Z produce abreviaturas ambiguas ('-03-0300').
+        formatted_converted = converted_dt.strftime('%Y-%m-%d %H:%M:%S %z') or converted_dt.isoformat()
+    except _TZ_ERRORS as tz_lookup_err:
         logger.critical(f"Error Interno: TZ '{final_target_tz_str}' no encontrada: {tz_lookup_err}")
         formatted_converted = "Error TZ Interno"
     except Exception as e:
@@ -129,16 +192,24 @@ def process_ip_analysis(
     log_queue_handler: Optional[logging.Handler] = None,
     input_file_hash: Optional[str] = None,
     app_version: Optional[str] = None,
+    cancel_event: Optional[Any] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Orquesta el proceso completo con extracción determinista."""
+    """Orquesta el proceso completo con extracción determinista.
 
+    Si se pasa ``cancel_event`` (threading.Event) y éste se activa, el análisis
+    se detiene y devuelve parcialmente lo procesado hasta ese momento.
+    """
+
+    root_logger = logging.getLogger()
     if log_queue_handler:
         if not log_queue_handler.formatter:
             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
             log_queue_handler.setFormatter(formatter)
-        if log_queue_handler not in logger.handlers:
-            logger.addHandler(log_queue_handler)
-            if logger.level == logging.NOTSET: logger.setLevel(logging.INFO)
+        # Se adjunta al logger raíz para que api_clients/file_io también lleguen a la GUI.
+        if log_queue_handler not in root_logger.handlers:
+            root_logger.addHandler(log_queue_handler)
+            if root_logger.level > logging.INFO or root_logger.level == logging.NOTSET:
+                root_logger.setLevel(logging.INFO)
 
     start_time = datetime.now()
     logger.info(f"[{start_time.strftime('%H:%M:%S')}] === INICIO Análisis ===")
@@ -158,6 +229,7 @@ def process_ip_analysis(
 
     _report_progress("Inicio", 0, "Validando config...")
     results_final: Optional[List[Dict[str, Any]]] = None
+    analysis_cancelled = False
 
     try:
         crit_deps = _check_critical_dependencies()
@@ -169,12 +241,22 @@ def process_ip_analysis(
         filepath = Path(input_filepath)
         if not filepath.is_file(): logger.critical(f"Archivo no encontrado: {filepath}"); _report_progress("Error", 100, "Archivo no encontrado"); return None
 
+        if not validate_timezone(target_timezone):
+            logger.critical(
+                f"Zona horaria no válida o no disponible en esta instalación: '{target_timezone}'."
+            )
+            _report_progress("Error", 100, f"Zona horaria no válida: {target_timezone}")
+            return None
         valid_target_tz = target_timezone
 
         _report_progress("Lectura", 5, f"Leyendo {filepath.name}...")
         text_content = read_input_file(filepath)
         if text_content is None: _report_progress("Error", 100, "Fallo lectura archivo"); return None
-        if not text_content.strip(): _report_progress("Completado", 100, "Archivo vacío"); return []
+        if not text_content.strip():
+            logger.warning("El archivo de entrada está vacío: no hay nada que analizar.")
+            results_final = []
+            _report_progress("Completado", 100, "Archivo vacío")
+            return {"analysis_results": [], "metadata": {"input_file_sha256": input_file_hash, "app_version": app_version}}
 
         logger.info(f"Archivo leído ({len(text_content)} caracteres).")
         _report_progress("Extracción Determinista", 20, "Analizando patrones de IP y Timestamp...")
@@ -191,8 +273,17 @@ def process_ip_analysis(
         total_ips = len(extracted_data)
         base_prog = 30; processing_weight = 70
         ip_info_cache: Dict[str, Any] = {}
+        cancelled = False
 
         for idx, item in enumerate(extracted_data):
+            if cancel_event is not None and cancel_event.is_set():
+                cancelled = True
+                logger.warning(
+                    f"Análisis cancelado por el usuario: {len(processed_results)} de {total_ips} IPs procesadas."
+                )
+                _report_progress("Cancelado", 100, f"Análisis cancelado ({len(processed_results)} IPs)")
+                break
+
             prog_share = int(((idx + 1) / total_ips) * processing_weight)
             current_perc = base_prog + prog_share
             ip = item.get('ip_address', 'ERROR'); ts_str = item.get('timestamp_str', "")
@@ -221,17 +312,24 @@ def process_ip_analysis(
                 "ip_info": ip_info
             })
         results_final = processed_results
+        analysis_cancelled = cancelled
 
     finally:
-        if log_queue_handler and log_queue_handler in logger.handlers:
-            logger.removeHandler(log_queue_handler)
-
+        # Los logs de cierre deben emitirse ANTES de quitar el handler (llegan a la GUI).
         end_time = datetime.now(); duration = end_time - start_time
         log_lvl = logging.INFO if results_final is not None else logging.ERROR
         logger.log(log_lvl, f"[{end_time.strftime('%H:%M:%S')}] === FIN Análisis ===")
-        if results_final is not None: logger.log(log_lvl, f"Se procesaron {len(results_final)} IPs.")
+        if results_final is not None:
+            logger.log(log_lvl, f"Se procesaron {len(results_final)} IPs.")
         logger.log(log_lvl, f"Duración total: {duration.total_seconds():.2f} segundos.")
-        if results_final is not None: _report_progress("Completado", 100, f"Análisis finalizado ({len(results_final)} IPs).")
+        if log_queue_handler and log_queue_handler in root_logger.handlers:
+            root_logger.removeHandler(log_queue_handler)
+
+        if results_final is not None:
+            if analysis_cancelled:
+                _report_progress("Cancelado", 100, f"Análisis cancelado ({len(results_final)} IPs).")
+            else:
+                _report_progress("Completado", 100, f"Análisis finalizado ({len(results_final)} IPs).")
 
     if results_final is not None:
         return {
@@ -242,7 +340,8 @@ def process_ip_analysis(
                 "analysis_duration_seconds": (datetime.now() - start_time).total_seconds(),
                 "input_filepath": str(Path(input_filepath).resolve()),
                 "target_timezone": target_timezone,
-                "app_version": app_version
+                "app_version": app_version,
+                "cancelado": analysis_cancelled
             }
         }
     else:

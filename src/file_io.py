@@ -1,3 +1,4 @@
+import codecs
 import csv
 import io
 import json
@@ -13,27 +14,84 @@ except ImportError:
 
 try:
     from fpdf import FPDF
+    from fpdf.enums import XPos, YPos
     _fpdf_available = True
 except ImportError:
+    # Sin fpdf2 la app sigue funcionando: export_to_pdf() lanza un ImportError explicativo.
     _fpdf_available = False
+    FPDF = object  # type: ignore[assignment]
+    XPos = YPos = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
+
+# Claves de metadatos internas: no se muestran en TXT/CSV/PDF (sí van al JSON).
+_META_EXCLUDED_KEYS = (
+    "input_file_sha256", "app_version", "analysis_start_time",
+    "analysis_duration_seconds", "input_filepath", "target_timezone", "cancelado",
+)
+
+# Orden estable de columnas para CSV.
+CSV_FIELDNAMES = [
+    "orden", "ip_address", "raw_timestamp_str", "timestamp_utc", "timestamp_converted",
+    "isp", "city", "region", "country", "hostname", "location", "ip_info_error",
+]
+
+SUPPORTED_INPUT_SUFFIXES = (".txt", ".csv", ".log", ".docx")
+
+# Aviso si el archivo supera este tamaño (se carga completo en memoria por diseño).
+_SIZE_WARN_BYTES = 100 * 1024 * 1024
+
+# Caracteres UTF-8 frecuentes que Helvetica (latin-1) no puede representar.
+_LATIN1_TRANSLIT = {
+    '€': 'EUR', '‘': "'", '’': "'", '“': '"', '”': '"', '–': '-',
+    '—': '-', '…': '...', '®': '(R)', '™': '(TM)', '°': 'deg', '×': 'x',
+}
+
+
+def _to_latin1(text: Any) -> str:
+    """Convierte texto a latin-1 para PDF, transliterando en lugar de borrar caracteres."""
+    value = str(text) if text is not None else ""
+    for src, dst in _LATIN1_TRANSLIT.items():
+        value = value.replace(src, dst)
+    return value.encode('latin-1', errors='replace').decode('latin-1')
+
 
 def read_input_file(filepath: Path) -> Union[str, None]:
     """Lee contenido de TXT, CSV, LOG o DOCX."""
     try:
         suffix = filepath.suffix.lower()
         logger.info(f"Intentando leer archivo: {filepath.name} (formato {suffix})")
-        if suffix in [".txt", ".csv", ".log"]:
+        if suffix in (".txt", ".csv", ".log"):
             try:
-                content = filepath.read_text(encoding="utf-8")
-                logger.info("Archivo leído con éxito (UTF-8).")
+                file_size = filepath.stat().st_size
+            except OSError:
+                file_size = 0
+            if file_size > _SIZE_WARN_BYTES:
+                logger.warning(
+                    f"El archivo {filepath.name} pesa {file_size / (1024 * 1024):.1f} MB: "
+                    f"se cargará completo en memoria."
+                )
+            encoding = "utf-8"
+            try:
+                with open(filepath, "rb") as raw:
+                    start = raw.read(4)
+                if start.startswith(codecs.BOM_UTF8):
+                    encoding = "utf-8-sig"
+                elif start.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+                    encoding = "utf-16"
+            except OSError:
+                pass
+            try:
+                content = filepath.read_text(encoding=encoding)
+                logger.info(f"Archivo leído con éxito ({encoding.upper()}).")
                 return content
             except UnicodeDecodeError:
-                logger.warning(f"Falló lectura UTF-8 de {filepath.name}. Intentando latin-1.")
+                logger.warning(
+                    f"Falló lectura {encoding.upper()} de {filepath.name}. Intentando latin-1."
+                )
                 try:
-                    content = filepath.read_text(encoding="latin-1", errors="replace")
-                    logger.info("Archivo leído con éxito (Latin-1 con reemplazo).")
+                    content = filepath.read_text(encoding="latin-1")
+                    logger.info("Archivo leído con éxito (Latin-1).")
                     return content
                 except Exception as latin_err:
                     logger.error(f"Falló también la lectura con Latin-1: {latin_err}")
@@ -48,11 +106,20 @@ def read_input_file(filepath: Path) -> Union[str, None]:
                 return None
             try:
                 doc = Document(filepath)
-                full_text = "\n".join(
-                    [p.text for p in doc.paragraphs if p.text and p.text.strip()]
-                )
+                parts = [p.text for p in doc.paragraphs if p.text and p.text.strip()]
+                table_cells = 0
+                for table in doc.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            text = cell.text.strip()
+                            if text:
+                                parts.append(text)
+                                table_cells += 1
+                full_text = "\n".join(parts)
                 if not full_text.strip():
                     logger.warning(f"El archivo .docx '{filepath.name}' parece vacío.")
+                elif table_cells:
+                    logger.info(f"Archivo .docx leído con éxito (incluye {table_cells} celdas de tablas).")
                 else:
                     logger.info("Archivo .docx leído con éxito.")
                 return full_text
@@ -63,7 +130,10 @@ def read_input_file(filepath: Path) -> Union[str, None]:
                 )
                 return None
         else:
-            logger.error(f"Formato de archivo no soportado: '{suffix}'")
+            logger.error(
+                f"Formato de archivo no soportado: '{suffix}'. "
+                f"Formatos válidos: {', '.join(SUPPORTED_INPUT_SUFFIXES)}"
+            )
             return None
     except FileNotFoundError:
         logger.critical(f"Archivo no encontrado en la ruta: {filepath}")
@@ -116,7 +186,26 @@ def _prepare_export_data(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def format_report(results: List[Dict[str, Any]], requested_timezone: str, metadata: Dict[str, str]) -> str:
     """Genera un informe de texto plano formateado."""
-    output = io.StringIO(); report_width = 180
+    output = io.StringIO()
+
+    prepared_data = _prepare_export_data(results)
+    headers = {
+        "orden": "Nº", "ip_address": "IP Address", "timestamp_utc": "Timestamp (UTC)",
+        "timestamp_converted": f"Timestamp ({requested_timezone})", "isp": "ISP / Error",
+        "location": "Ubicación", "hostname": "Hostname",
+    }
+    # Anchos mínimos por columna; nunca por debajo de la cabecera (evita etiquetas cortadas).
+    min_widths = {
+        "orden": 4, "ip_address": 38, "timestamp_utc": 23, "timestamp_converted": 30,
+        "isp": 30, "location": 30, "hostname": 24,
+    }
+    widths = {k: max(min_widths[k], len(headers[k])) for k in headers}
+    header_keys = list(headers.keys())
+    separator = " | "
+    total_w = sum(widths[k] for k in header_keys) + (len(headers) - 1) * len(separator)
+    report_width = max(180, total_w)
+    logger.debug(f"(Ancho tabla TXT: {total_w} caracteres)")
+
     print("=" * report_width, file=output)
     print(f"{ 'INFORME DE ANÁLISIS DE IPs Y ISPs':^{report_width}}", file=output)
     print("=" * report_width, file=output)
@@ -129,29 +218,20 @@ def format_report(results: List[Dict[str, Any]], requested_timezone: str, metada
         if "app_version" in metadata and metadata["app_version"]:
             print(f"Versión de la Aplicación: {metadata['app_version']}", file=output)
 
-        filtered_meta = {k: v for k, v in metadata.items() if v and k not in ["input_file_sha256", "app_version", "analysis_start_time", "analysis_duration_seconds", "input_filepath", "target_timezone"]}
+        filtered_meta = {k: v for k, v in metadata.items() if v and k not in _META_EXCLUDED_KEYS}
         if filtered_meta:
             max_key_len = max(len(key.replace('_', ' ').title()) for key in filtered_meta) + 1
             for key, value in filtered_meta.items(): print(f"{key.replace('_', ' ').title()}:".ljust(max_key_len) + f" {value}", file=output)
         else: print("  (No se proporcionaron datos del caso adicionales)", file=output)
         print("-" * report_width, file=output)
 
-    final_tz_used = requested_timezone
-    print(f"\n{ 'Resultados (Zona Horaria Aplicada: ' + final_tz_used + ')':^{report_width}}", file=output)
+    print(f"\n{ 'Resultados (Zona Horaria Aplicada: ' + requested_timezone + ')':^{report_width}}", file=output)
     print("-" * report_width, file=output)
 
-    if not results:
+    if not prepared_data:
         print("\nNo se encontraron o procesaron datos válidos.".center(report_width), file=output)
         print("\n" + "=" * report_width, file=output)
         return output.getvalue()
-
-    prepared_data = _prepare_export_data(results)
-    headers = {"orden": "Nº", "ip_address": "IP Address", "timestamp_utc": "Timestamp (UTC)", "timestamp_converted": f"Timestamp ({final_tz_used})", "isp": "ISP / Error", "location": "Ubicación", "hostname": "Hostname"}
-    widths = {"orden": 4, "ip_address": 38, "timestamp_utc": 23, "timestamp_converted": 28, "isp": 30, "location": 30, "hostname": 24}
-    header_keys = list(headers.keys())
-    separator = " | "; total_w = sum(widths[k] for k in header_keys) + (len(headers) - 1) * len(separator)
-    if total_w > report_width: report_width = total_w
-    logger.debug(f"(Ancho tabla TXT: {total_w} caracteres)")
 
     header_line = separator.join([f"{headers[h]:<{widths[h]}}" for h in header_keys])
     print(header_line, file=output)
@@ -173,9 +253,9 @@ def format_report(results: List[Dict[str, Any]], requested_timezone: str, metada
 
 def export_to_csv(filepath: Union[str, Path], results: List[Dict[str, Any]], metadata: Dict[str, str]) -> None:
     filepath = Path(filepath); prepared_data = _prepare_export_data(results)
-    if not prepared_data: logger.warning("No hay datos para exportar a CSV."); return
-    fieldnames = list(prepared_data[0].keys())
-    if "ip_info_error" in fieldnames: fieldnames.remove("ip_info_error"); fieldnames.append("ip_info_error")
+    if not prepared_data:
+        logger.warning("No hay datos para exportar a CSV: se escribirá únicamente la cabecera.")
+    fieldnames = list(CSV_FIELDNAMES)
     try:
         with open(filepath, 'w', newline='', encoding='utf-8-sig') as csvfile:
             if metadata:
@@ -184,11 +264,10 @@ def export_to_csv(filepath: Union[str, Path], results: List[Dict[str, Any]], met
                     csvfile.write(f"# SHA256 del Archivo de Entrada: {metadata['input_file_sha256']}\n")
                 if "app_version" in metadata and metadata["app_version"]:
                     csvfile.write(f"# Versión de la Aplicación: {metadata['app_version']}\n")
-                # Write other metadata
                 for k, v in metadata.items():
-                    if k not in ["input_file_sha256", "app_version", "analysis_start_time", "analysis_duration_seconds", "input_filepath", "target_timezone"]:
+                    if k not in _META_EXCLUDED_KEYS:
                         csvfile.write(f"# {k.replace('_',' ').title()}: {v}\n")
-                csvfile.write("# ---\n\n")
+                csvfile.write("# ---\n")
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
             writer.writeheader(); writer.writerows(prepared_data)
         logger.info(f"Informe exportado a CSV: {filepath}")
@@ -228,17 +307,21 @@ class IPAnalyzerPDF(FPDF):
 
         # Page number (right aligned)
         page_num_text = f"Pág. {self.page_no()}/{{nb}}" # {nb} is a placeholder for total pages
-        self.cell(0, 10, page_num_text, 0, 0, 'R')
+        self.cell(0, 10, page_num_text, border=0, align='R')
 
         # Custom footer text (centered)
         app_ver_raw = self.app_metadata.get("app_version") or "IP Analyzer v2.2"
-        app_ver_raw = app_ver_raw.encode('latin-1', errors='ignore').decode('latin-1')
-        app_name = app_ver_raw.split(" v")[0] if " v" in app_ver_raw else app_ver_raw
-        app_version = app_ver_raw
+        app_ver_raw = _to_latin1(app_ver_raw)
+        if " v" in app_ver_raw:
+            app_name, _, version_part = app_ver_raw.partition(" v")
+            version_part = "v" + version_part
+        else:
+            app_name, version_part = app_ver_raw, ""
         developer_name = "Diego A. Rábalo" # Updated developer name
         linkedin_url = "https://www.linkedin.com/in/rabalo" # Updated LinkedIn URL
 
-        footer_text_part1 = f"Informe creado por {app_name} {app_version}, desarrollado por {developer_name}"
+        creator = " ".join(p for p in (app_name.strip(), version_part.strip()) if p)
+        footer_text_part1 = f"Informe creado por {creator}, desarrollado por {developer_name}"
         footer_text_part2 = f" ({linkedin_url})" # LinkedIn URL as text
 
         # Calculate width of the combined text
@@ -251,12 +334,12 @@ class IPAnalyzerPDF(FPDF):
         # Print first part of the footer text
         self.set_text_color(0) # Black color for normal text
         self.set_font("Helvetica", size=8) # Normal font
-        self.cell(self.get_string_width(footer_text_part1), 10, footer_text_part1, 0, 0, 'L')
+        self.cell(self.get_string_width(footer_text_part1), 10, footer_text_part1, border=0, align='L')
 
         # Print LinkedIn URL as clickable text
         self.set_text_color(0, 0, 255) # Blue color for link
         self.set_font("Helvetica", size=8, style='U') # Underline for link
-        self.cell(self.get_string_width(footer_text_part2), 10, footer_text_part2, 0, 0, 'L', link=linkedin_url)
+        self.cell(self.get_string_width(footer_text_part2), 10, footer_text_part2, border=0, align='L', link=linkedin_url)
 
         # Reset color and font for subsequent text (if any)
         self.set_text_color(0)
@@ -275,39 +358,45 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
     pdf.set_font("Helvetica", size=8); page_width = pdf.w - 2 * pdf.l_margin
 
     pdf.set_font("Helvetica", 'B', size=14)
-    pdf.cell(page_width, 10, "Informe de Análisis de IPs y ISPs", ln=True, align='C'); pdf.ln(5)
+    pdf.cell(page_width, 10, "Informe de Análisis de IPs y ISPs", align='C',
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(5)
 
     if metadata:
-        pdf.set_font("Helvetica", 'B', size=9); pdf.cell(page_width, 7, "Datos del Caso:", ln=True)
+        pdf.set_font("Helvetica", 'B', size=9)
+        pdf.cell(page_width, 7, "Datos del Caso:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", size=8)
         # Add SHA256 and App Version to metadata for display
         if "input_file_sha256" in metadata and metadata["input_file_sha256"]:
-            pdf.multi_cell(page_width, 4.5, f"  SHA256 del Archivo de Entrada: {metadata['input_file_sha256']}", ln=True)
+            pdf.multi_cell(page_width, 4.5, f"  SHA256 del Archivo de Entrada: {metadata['input_file_sha256']}")
         if "app_version" in metadata and metadata["app_version"]:
-            app_ver_safe = metadata['app_version'].encode('latin-1', errors='ignore').decode('latin-1')
-            pdf.multi_cell(page_width, 4.5, f"  Versión de la Aplicación: {app_ver_safe}", ln=True)
-        
+            pdf.multi_cell(page_width, 4.5, f"  Versión de la Aplicación: {_to_latin1(metadata['app_version'])}")
+
         # Add Total Pages to metadata for display
         # This will be a placeholder for now, updated after content is added
-        pdf.multi_cell(page_width, 4.5, f"  Total páginas: {{nb}}", ln=True) # Placeholder for total pages
+        pdf.multi_cell(page_width, 4.5, f"  Total páginas: {{nb}}") # Placeholder for total pages
 
         # Print other metadata
         for k, v in metadata.items():
-            if k not in ["input_file_sha256", "app_version", "analysis_start_time", "analysis_duration_seconds", "input_filepath", "target_timezone"]:
-                safe_v = str(v).encode('latin-1', errors='ignore').decode('latin-1') if v else ''
-                pdf.multi_cell(page_width, 4.5, f"  {k.replace('_',' ').title()}: {safe_v}", ln=True)
+            if k not in _META_EXCLUDED_KEYS:
+                safe_v = _to_latin1(v) if v else ''
+                pdf.multi_cell(page_width, 4.5, f"  {k.replace('_',' ').title()}: {safe_v}")
         pdf.ln(4)
 
     requested_tz = metadata.get("zona_horaria_solicitada_gui", metadata.get("zona_horaria_cli", "UTC"))
     pdf.set_font("Helvetica", size=8)
-    pdf.cell(page_width, 5, f"Zona Horaria Aplicada: {requested_tz}", ln=True); pdf.ln(5)
+    pdf.cell(page_width, 5, f"Zona Horaria Aplicada: {requested_tz}",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(5)
 
     if not results:
         pdf.set_font("Helvetica", 'I', size=10)
-        pdf.cell(page_width, 10, "No se encontraron datos válidos.", ln=True, align='C')
+        pdf.cell(page_width, 10, "No se encontraron datos válidos.", align='C',
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     else:
         pdf_data = _prepare_export_data(results)
         headers = ["Nº", "IP Address", "TS (UTC)", f"TS ({requested_tz})", "ISP/Error", "Ubicación", "Hostname"]
+        headers = [_to_latin1(h) for h in headers]
         data_keys = ["orden", "ip_address", "timestamp_utc", "timestamp_converted", "isp", "location", "hostname"]
         col_w = {'orden': 10, 'ip_address': 45, 'timestamp_utc': 45, 'timestamp_converted': 50, 'isp': 45, 'location': 45, 'hostname': 37}
         total_w = sum(col_w.values())
@@ -326,8 +415,9 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
             # Calcular altura necesaria para la fila
             max_lines = 1
             for key in data_keys:
-                 value = str(row_dict.get(key, ''))
-                 lines = pdf.multi_cell(col_w[key], line_height, value, border=0, align='L', split_only=True)
+                 value = _to_latin1(row_dict.get(key, ''))
+                 lines = pdf.multi_cell(col_w[key], line_height, value, border=0, align='L',
+                                        dry_run=True, output='LINES')
                  max_lines = max(max_lines, len(lines))
             row_height = max_lines * line_height
 
@@ -340,10 +430,11 @@ def export_to_pdf(filepath: Union[str, Path], results: List[Dict[str, Any]], met
 
             start_y = pdf.get_y()
             for i, key in enumerate(data_keys):
-                value = str(row_dict.get(key, ''))
+                value = _to_latin1(row_dict.get(key, ''))
                 align = 'C' if key == 'orden' else 'L'
                 current_x = pdf.get_x()
-                pdf.multi_cell(col_w[key], line_height, value, border=1, align=align, ln=3, max_line_height=line_height)
+                pdf.multi_cell(col_w[key], line_height, value, border=1, align=align,
+                               max_line_height=line_height)
                 pdf.set_xy(current_x + col_w[key], start_y)
             pdf.ln(row_height)
 

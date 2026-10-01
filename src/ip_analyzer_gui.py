@@ -1,13 +1,15 @@
 import sys
 import os
+import html
 import hashlib
 import logging
 from pathlib import Path
 from datetime import datetime
+from threading import Event
 from typing import Optional, List, Dict, Any
 
-from PySide6.QtCore import Qt, QThread, Signal, QObject
-from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QAction, QColor, QIcon
+from PySide6.QtCore import Qt, QThread, Signal, QObject, QTimer, QItemSelectionModel
+from PySide6.QtGui import QFont, QDragEnterEvent, QDropEvent, QAction, QColor, QIcon, QTextCursor
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QLabel, QLineEdit, QPushButton, QComboBox,
@@ -28,14 +30,35 @@ import processing
 
 logger = logging.getLogger(__name__)
 
+APP_NAME = "IP Analyzer"
+APP_VERSION = "2.2"
+APP_FULL_VERSION = f"{APP_NAME} v{APP_VERSION}"
+APP_TITLE = f"{APP_FULL_VERSION} - Extraccion Local & Enriquecimiento"
+
+# Máximo de líneas visibles en el panel de log (evita crecimiento ilimitado).
+LOG_MAX_LINES = 2000
+
+# Errores de ipinfo que indican una IP de red local (KPI "Redes Privadas" y resaltado).
+PRIVATE_IP_ERRORS = {"IP Privada", "IP Loopback", "IP Link-Local"}
+
 # Icons populated after QApplication in main()
 ICONS = {}
 
 
-def init_icons():
+def init_icons() -> bool:
     """Initialize FontAwesome icons via qtawesome. Must be called AFTER QApplication."""
-    import qtawesome as qta
     global ICONS
+    try:
+        import qtawesome as qta
+    except ImportError as qt_err:
+        logger.critical(f"Falta la dependencia 'qtawesome': {qt_err}")
+        QMessageBox.critical(
+            None,
+            "Dependencia faltante",
+            "No se pudo cargar 'qtawesome', necesario para los iconos de la interfaz.\n\n"
+            "Instálalo con: pip install qtawesome",
+        )
+        return False
     ICONS = {
         'eye': qta.icon('fa5s.eye', color='#475569'),
         'eye_slash': qta.icon('fa5s.eye-slash', color='#475569'),
@@ -49,13 +72,16 @@ def init_icons():
         'lock': qta.icon('fa5s.lock', color='#3B82F6'),
         'key': qta.icon('fa5s.key', color='#475569'),
         'play': qta.icon('fa5s.play', color='#FFFFFF'),
+        'stop': qta.icon('fa5s.stop', color='#FFFFFF'),
         'trash': qta.icon('fa5s.trash', color='#475569'),
         'clipboard': qta.icon('fa5s.clipboard-list', color='#475569'),
+        'clipboard_off': qta.icon('fa5s.clipboard', color='#475569'),
         'sync': qta.icon('fa5s.sync', color='#475569'),
         'times': qta.icon('fa5s.times', color='#475569'),
         'info': qta.icon('fa5s.info-circle', color='#475569'),
         'file_export': qta.icon('fa5s.file-export', color='#475569'),
     }
+    return True
 
 
 def _tz_to_etc(tz_display: str) -> str:
@@ -81,18 +107,35 @@ class QtLogHandler(logging.Handler):
         self.signal.emit(msg, record.levelname)
 
 
+def calculate_file_hash(filepath: Path) -> str:
+    """SHA-256 del archivo de entrada (se ejecuta en el hilo worker, no en la UI)."""
+    sha256 = hashlib.sha256()
+    try:
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+    except Exception as hash_err:
+        logger.warning(
+            f"No se pudo calcular el SHA-256 de {filepath.name}: {hash_err}. "
+            f"El informe se generará sin hash de entrada."
+        )
+        return ""
+
+
 class AnalysisWorker(QObject):
     progress_updated = Signal(dict)
     log_emitted = Signal(str, str)
     finished = Signal(object)
     error_occurred = Signal(str)
 
-    def __init__(self, filepath: Path, target_tz: str, ipinfo_token: str, file_hash: str, app_version: str):
+    def __init__(self, filepath: Path, target_tz: str, ipinfo_token: str,
+                 cancel_event: Optional[Event] = None, app_version: str = APP_FULL_VERSION):
         super().__init__()
         self.filepath = filepath
         self.target_tz = target_tz
         self.ipinfo_token = ipinfo_token
-        self.file_hash = file_hash
+        self.cancel_event = cancel_event
         self.app_version = app_version
 
     def run(self):
@@ -108,20 +151,39 @@ class AnalysisWorker(QObject):
         progress_q = QtProgressQueue(self.progress_updated)
 
         try:
+            file_hash = calculate_file_hash(self.filepath)
             results = processing.process_ip_analysis(
                 input_filepath=self.filepath,
                 target_timezone=self.target_tz,
                 ipinfo_token=self.ipinfo_token,
                 progress_queue=progress_q,
                 log_queue_handler=handler,
-                input_file_hash=self.file_hash,
-                app_version=self.app_version
+                input_file_hash=file_hash,
+                app_version=self.app_version,
+                cancel_event=self.cancel_event
             )
             self.finished.emit(results)
         except Exception as e:
             logger.error(f"Error en worker de analisis: {e}", exc_info=True)
             self.error_occurred.emit(str(e))
             self.finished.emit(None)
+
+
+class TokenTestWorker(QObject):
+    """Valida el token ipinfo.io fuera del hilo de la interfaz."""
+    finished = Signal(bool)
+
+    def __init__(self, token: str):
+        super().__init__()
+        self.token = token
+
+    def run(self):
+        try:
+            ok = api_clients.validate_api_keys(self.token)
+        except Exception as test_err:
+            logger.error(f"Error probando token: {test_err}")
+            ok = False
+        self.finished.emit(ok)
 
 
 class ApiTokenDialog(QDialog):
@@ -194,10 +256,10 @@ class ApiTokenDialog(QDialog):
         layout.addWidget(form_card)
 
         btn_box = QHBoxLayout()
-        test_btn = QPushButton(" Probar Conexion")
-        test_btn.setIcon(ICONS['plug'])
-        test_btn.setFixedHeight(36)
-        test_btn.clicked.connect(self._test_token)
+        self.test_btn = QPushButton(" Probar Conexion")
+        self.test_btn.setIcon(ICONS['plug'])
+        self.test_btn.setFixedHeight(36)
+        self.test_btn.clicked.connect(self._test_token)
 
         save_btn = QPushButton(" Guardar")
         save_btn.setIcon(ICONS['save'])
@@ -221,7 +283,7 @@ class ApiTokenDialog(QDialog):
         cancel_btn.setFixedHeight(36)
         cancel_btn.clicked.connect(self.reject)
 
-        btn_box.addWidget(test_btn)
+        btn_box.addWidget(self.test_btn)
         btn_box.addStretch()
         btn_box.addWidget(save_btn)
         btn_box.addWidget(cancel_btn)
@@ -234,14 +296,32 @@ class ApiTokenDialog(QDialog):
             self.show_cb.setIcon(ICONS['eye_slash'])
         else:
             self.show_cb.setText(" Mostrar")
-        self.show_cb.setIcon(ICONS['eye'])
+            self.show_cb.setIcon(ICONS['eye'])
 
     def _test_token(self):
         token = self.token_entry.text().strip()
         if not token:
             QMessageBox.warning(self, "Token Vacio", "Por favor introduzca un token para probar.")
             return
-        ok = api_clients.validate_api_keys(token)
+        # La validación es una llamada de red: se ejecuta fuera del hilo de la interfaz.
+        self.test_btn.setEnabled(False)
+        self.test_btn.setText(" Probando...")
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+
+        self._test_thread = QThread()
+        self._test_worker = TokenTestWorker(token)
+        self._test_worker.moveToThread(self._test_thread)
+        self._test_thread.started.connect(self._test_worker.run)
+        self._test_worker.finished.connect(self._on_token_test_finished, Qt.QueuedConnection)
+        self._test_worker.finished.connect(self._test_thread.quit)
+        self._test_thread.finished.connect(self._test_worker.deleteLater)
+        self._test_thread.finished.connect(self._test_thread.deleteLater)
+        self._test_thread.start()
+
+    def _on_token_test_finished(self, ok: bool):
+        QApplication.restoreOverrideCursor()
+        self.test_btn.setEnabled(True)
+        self.test_btn.setText(" Probar Conexion")
         if ok:
             QMessageBox.information(self, "Exito", "Token de ipinfo.io validado correctamente!")
         else:
@@ -352,24 +432,37 @@ class StatCard(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("IP Analyzer v2.2 - Extraccion Local & Enriquecimiento")
+        self.setWindowTitle(APP_TITLE)
         self.resize(1400, 900)
         self.setMinimumSize(1100, 700)
 
         self.ipinfo_token = ""
         self.full_results: List[Dict[str, Any]] = []
+        # Resultados actualmente visibles en la tabla y sus índices en full_results.
+        self.visible_results: List[Dict[str, Any]] = []
+        self.visible_indices: List[int] = []
         self.analysis_metadata: Dict[str, Any] = {}
         self.worker_thread: Optional[QThread] = None
+        self.worker: Optional[AnalysisWorker] = None
+        self.cancel_event: Optional[Event] = None
         self.selected_file: Optional[Path] = None
+        self._is_running = False
+
+        # Debounce del buscador: repoblar la tabla en cada tecla es lento y borra la selección.
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self._filter_table)
 
         self._load_config()
         self._setup_ui()
         self._setup_menu()
         self._apply_styles()
         self._update_status()
+        self._set_running(False)
 
     def _load_config(self):
-        _, self.ipinfo_token = config.load_config()
+        self.ipinfo_token = config.load_config()
 
     def _setup_ui(self):
         central_widget = QWidget()
@@ -519,6 +612,30 @@ class MainWindow(QMainWindow):
         self.btn_start.clicked.connect(self._start_analysis)
         action_layout.addWidget(self.btn_start)
 
+        self.btn_cancel = QPushButton(" Cancelar")
+        self.btn_cancel.setIcon(ICONS['stop'])
+        self.btn_cancel.setFixedHeight(32)
+        self.btn_cancel.setEnabled(False)
+        self.btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #DC2626;
+                color: white;
+                font-size: 11px;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+                padding: 0 24px;
+            }
+            QPushButton:hover {
+                background-color: #B91C1C;
+            }
+            QPushButton:disabled {
+                background-color: #94A3B8;
+            }
+        """)
+        self.btn_cancel.clicked.connect(self._cancel_analysis)
+        action_layout.addWidget(self.btn_cancel)
+
         self.btn_clear = QPushButton(" Limpiar")
         self.btn_clear.setIcon(ICONS['trash'])
         self.btn_clear.setFixedHeight(32)
@@ -589,7 +706,7 @@ class MainWindow(QMainWindow):
         filter_box.addWidget(lbl_search)
         self.search_entry = QLineEdit()
         self.search_entry.setPlaceholderText("Filtrar por IP, ISP, Ubicacion, Hostname, Timestamp...")
-        self.search_entry.textChanged.connect(self._filter_table)
+        self.search_entry.textChanged.connect(self._on_search_text_changed)
         filter_box.addWidget(self.search_entry, stretch=2)
 
         lbl_country = QLabel("Pais:")
@@ -609,6 +726,8 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(["N", "IP Address", "Timestamp (UTC)", "Timestamp Conv.", "ISP / Categoria", "Ubicacion", "Hostname"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        # La columna N define el mapeo fila -> registro: no debe ser editable.
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -818,7 +937,7 @@ class MainWindow(QMainWindow):
         self.log_widget.setVisible(checked)
         if checked:
             self.btn_toggle_log.setText(" Ocultar Log")
-            self.btn_toggle_log.setIcon(ICONS['clipboard'])
+            self.btn_toggle_log.setIcon(ICONS['clipboard_off'])
         else:
             self.btn_toggle_log.setText(" Mostrar Log")
             self.btn_toggle_log.setIcon(ICONS['clipboard'])
@@ -845,59 +964,81 @@ class MainWindow(QMainWindow):
 
     def _on_file_selected(self, filepath: str):
         path = Path(filepath)
-        if path.is_file():
-            self.selected_file = path
-            file_size_kb = path.stat().st_size / 1024
-            size_str = f"{file_size_kb:.1f} KB" if file_size_kb < 1024 else f"{file_size_kb/1024:.2f} MB"
-
-            self.drop_area.icon_label.setPixmap(ICONS['file'].pixmap(48, 48))
-            self.drop_area.label.setText(f"<b>{path.name}</b><br><span style='font-size: 11px; color: #64748B;'>Tamano: {size_str}</span>")
-            self.drop_area.set_file_selected_style()
-            self.status_bar.showMessage(f"Archivo cargado correctamente: {path.name}")
-        else:
+        if not path.is_file():
             QMessageBox.warning(self, "Error", f"No se pudo encontrar el archivo: {filepath}")
+            return
+
+        suffix = path.suffix.lower()
+        if suffix not in file_io.SUPPORTED_INPUT_SUFFIXES:
+            QMessageBox.warning(
+                self,
+                "Formato no soportado",
+                f"El archivo '{path.name}' tiene la extension '{suffix or '(sin extension)'}'.\n\n"
+                f"Formatos admitidos: {', '.join(file_io.SUPPORTED_INPUT_SUFFIXES)}",
+            )
+            return
+
+        self.selected_file = path
+        file_size_kb = path.stat().st_size / 1024
+        size_str = f"{file_size_kb:.1f} KB" if file_size_kb < 1024 else f"{file_size_kb/1024:.2f} MB"
+
+        self.drop_area.icon_label.setPixmap(ICONS['file'].pixmap(48, 48))
+        self.drop_area.label.setText(f"<b>{path.name}</b><br><span style='font-size: 11px; color: #64748B;'>Tamano: {size_str}</span>")
+        self.drop_area.set_file_selected_style()
+        self.status_bar.showMessage(f"Archivo cargado correctamente: {path.name}")
 
     def _start_analysis(self):
+        if self._is_running:
+            return
+
         if not self.selected_file or not self.selected_file.is_file():
             QMessageBox.warning(self, "Atencion", "Por favor seleccione o arrastre un archivo primero.")
             return
 
-        self.btn_start.setEnabled(False)
-        self.btn_select_file.setEnabled(False)
+        suffix = self.selected_file.suffix.lower()
+        if suffix not in file_io.SUPPORTED_INPUT_SUFFIXES:
+            QMessageBox.warning(
+                self, "Formato no soportado",
+                f"Formatos admitidos: {', '.join(file_io.SUPPORTED_INPUT_SUFFIXES)}"
+            )
+            return
+
+        if not processing.validate_timezone(_tz_to_etc(self.tz_combo.currentText())):
+            QMessageBox.warning(
+                self, "Zona horaria no valida",
+                f"No se encontro la zona horaria '{self.tz_combo.currentText()}'."
+            )
+            return
+
         self.progress_bar.setValue(0)
         self.table.setRowCount(0)
         self.log_text.clear()
-        self.action_export.setEnabled(False)
-
-        file_hash = self._calculate_file_hash(self.selected_file)
+        self.full_results = []
+        self.visible_results = []
+        self.visible_indices = []
+        self.analysis_metadata = {}
+        self._update_kpi_cards([])
+        self.cancel_event = Event()
+        self._set_running(True)
+        self.status_bar.showMessage("Analisis en curso...")
 
         self.worker_thread = QThread()
         self.worker = AnalysisWorker(
             filepath=self.selected_file,
             target_tz=_tz_to_etc(self.tz_combo.currentText()),
             ipinfo_token=self.ipinfo_token,
-            file_hash=file_hash,
-            app_version=self.windowTitle()
+            cancel_event=self.cancel_event,
+            app_version=APP_FULL_VERSION
         )
         self.worker.moveToThread(self.worker_thread)
 
         self.worker_thread.started.connect(self.worker.run)
-        self.worker.progress_updated.connect(self._on_progress)
-        self.worker.log_emitted.connect(self._on_log)
-        self.worker.finished.connect(self._on_analysis_finished)
-        self.worker.error_occurred.connect(lambda err: QMessageBox.critical(self, "Error", f"Error en el worker de analisis: {err}"))
+        self.worker.progress_updated.connect(self._on_progress, Qt.QueuedConnection)
+        self.worker.log_emitted.connect(self._on_log, Qt.QueuedConnection)
+        self.worker.finished.connect(self._on_analysis_finished, Qt.QueuedConnection)
+        self.worker.error_occurred.connect(self._on_worker_error, Qt.QueuedConnection)
 
         self.worker_thread.start()
-
-    def _calculate_file_hash(self, filepath: Path) -> str:
-        sha256 = hashlib.sha256()
-        try:
-            with open(filepath, "rb") as f:
-                for chunk in iter(lambda: f.read(4096), b""):
-                    sha256.update(chunk)
-            return sha256.hexdigest()
-        except Exception:
-            return ""
 
     def _on_progress(self, data: dict):
         perc = data.get("percentage", 0)
@@ -911,29 +1052,98 @@ class MainWindow(QMainWindow):
         elif level in ("ERROR", "CRITICAL"): color = "#F87171"
         elif level == "DEBUG": color = "#94A3B8"
 
-        self.log_text.append(f'<font color="{color}">{msg}</font>')
+        self.log_text.append(f'<font color="{color}">{html.escape(msg)}</font>')
+
+        # El panel no debe crecer sin límite en análisis largos.
+        document = self.log_text.document()
+        line_count = document.blockCount()
+        if line_count > LOG_MAX_LINES:
+            cursor = self.log_text.textCursor()
+            cursor.movePosition(QTextCursor.Start)
+            cursor.movePosition(QTextCursor.Down, QTextCursor.KeepAnchor, line_count - LOG_MAX_LINES)
+            cursor.removeSelectedText()
 
     def _on_analysis_finished(self, results_wrapper: Optional[dict]):
-        self.btn_start.setEnabled(True)
-        self.btn_select_file.setEnabled(True)
+        self.cancel_event = None
 
         if self.worker_thread:
             self.worker_thread.quit()
             self.worker_thread.wait()
+            self.worker_thread = None
+        self.worker = None
 
         if not results_wrapper:
+            self.full_results = []
+            self.visible_results = []
+            self.visible_indices = []
+            self.progress_bar.setValue(0)
+            self._show_log_panel()
+            self._set_running(False)
             self.status_bar.showMessage("El analisis finalizo sin generar resultados.")
+            QMessageBox.critical(
+                self,
+                "Error en el analisis",
+                "El analisis finalizo sin resultados.\n\n"
+                "Revise el panel de log: alli se detalla el motivo "
+                "(archivo ilegible, formato no soportado o error de analisis).",
+            )
             return
 
-        self.full_results = results_wrapper.get("analysis_results", [])
+        self.full_results = results_wrapper.get("analysis_results", []) or []
         self.analysis_metadata = results_wrapper.get("metadata", {})
+        cancelled = bool(self.analysis_metadata.get("cancelado"))
 
-        self.status_bar.showMessage(f"Analisis finalizado exitosamente: {len(self.full_results)} IPs procesadas.", 8000)
-        self.action_export.setEnabled(len(self.full_results) > 0)
+        if cancelled:
+            self.status_bar.showMessage(
+                f"Analisis cancelado: {len(self.full_results)} IPs parciales.", 8000
+            )
+            QMessageBox.information(
+                self,
+                "Analisis cancelado",
+                f"El analisis fue cancelado por el usuario.\n"
+                f"Se conservan {len(self.full_results)} IPs procesadas antes de la cancelacion.",
+            )
+        else:
+            self.status_bar.showMessage(
+                f"Analisis finalizado exitosamente: {len(self.full_results)} IPs procesadas.", 8000
+            )
 
         self._update_kpi_cards(self.full_results)
-        self._populate_table(self.full_results)
+        self._populate_table(self.full_results, list(range(len(self.full_results))))
         self._populate_country_filter()
+        self._set_running(False)
+
+    def _set_running(self, running: bool):
+        """Habilita o bloquea los controles mientras dura un análisis."""
+        self._is_running = running
+        self.btn_start.setEnabled(not running)
+        self.btn_cancel.setEnabled(running)
+        self.btn_select_file.setEnabled(not running)
+        self.btn_clear.setEnabled(not running)
+        self.drop_area.setEnabled(not running)
+        self.tz_combo.setEnabled(not running)
+        self.search_entry.setEnabled(not running)
+        self.country_combo.setEnabled(not running)
+        for entry in (self.entry_investigator, self.entry_court, self.entry_dep, self.entry_case):
+            entry.setEnabled(not running)
+        self.action_export.setEnabled(not running and len(self.full_results) > 0)
+
+    def _cancel_analysis(self):
+        if not self._is_running or self.cancel_event is None:
+            return
+        self.cancel_event.set()
+        self.btn_cancel.setEnabled(False)
+        self.status_bar.showMessage("Cancelando analisis... espere por favor.")
+        logger.warning("Solicitud de cancelacion enviada al worker de analisis.")
+
+    def _show_log_panel(self):
+        self.log_widget.setVisible(True)
+        self.btn_toggle_log.setChecked(True)
+
+    def _on_worker_error(self, err: str):
+        self._show_log_panel()
+        self.progress_bar.setValue(0)
+        QMessageBox.critical(self, "Error", f"Error en el worker de analisis: {err}")
 
     def _update_kpi_cards(self, results: List[Dict[str, Any]]):
         prep_data = file_io._prepare_export_data(results)
@@ -944,11 +1154,13 @@ class MainWindow(QMainWindow):
         private_count = 0
 
         for item in prep_data:
-            isp = item.get("isp", "")
-            if isp and "Error: Red" in isp:
+            ip_error = item.get("ip_info_error")
+            if ip_error in PRIVATE_IP_ERRORS:
                 private_count += 1
-            elif isp and not isp.startswith("Error"):
-                isps.add(isp)
+            elif not ip_error:
+                isp = item.get("isp", "")
+                if isp and isp != "N/A":
+                    isps.add(isp)
 
             country = item.get("country", "")
             if country and country != "N/A":
@@ -959,13 +1171,17 @@ class MainWindow(QMainWindow):
         self.card_countries.set_value(str(len(countries)))
         self.card_private.set_value(str(private_count))
 
-    def _populate_table(self, results: List[Dict[str, Any]]):
+    def _populate_table(self, results: List[Dict[str, Any]], indices: List[int]):
+        """Rellena la tabla. `indices` son las posiciones de cada fila en full_results."""
         self.table.setRowCount(0)
+        self.visible_results = list(results)
+        self.visible_indices = list(indices)
         prep_data = file_io._prepare_export_data(results)
 
         self.table.setRowCount(len(prep_data))
         for row_idx, item in enumerate(prep_data):
-            item_num = QTableWidgetItem(str(item.get("orden", "")))
+            global_pos = indices[row_idx] if row_idx < len(indices) else row_idx
+            item_num = QTableWidgetItem(str(global_pos + 1))
             item_num.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row_idx, 0, item_num)
 
@@ -979,7 +1195,7 @@ class MainWindow(QMainWindow):
             isp_val = str(item.get("isp", ""))
             item_isp = QTableWidgetItem(isp_val)
 
-            if "Error: Red Privada" in isp_val or "Error: Red Loopback" in isp_val:
+            if item.get("ip_info_error") in PRIVATE_IP_ERRORS:
                 item_isp.setBackground(QColor("#E0E7FF"))
                 item_isp.setForeground(QColor("#3730A3"))
             elif isp_val.startswith("Error:"):
@@ -1010,16 +1226,17 @@ class MainWindow(QMainWindow):
 
         self.country_combo.blockSignals(False)
 
-    def _get_filtered_results(self):
-        """Return (filtered_results, filter_description_string) based on current filter widgets."""
+    def _compute_filtered(self):
+        """Devuelve (resultados_filtrados, índices_globales, descripción_del_filtro)."""
         search_text = self.search_entry.text().lower().strip()
         selected_country = self.country_combo.currentText()
         filters_applied = []
 
         prep_data = file_io._prepare_export_data(self.full_results)
-        filtered = []
+        filtered: List[Dict[str, Any]] = []
+        indices: List[int] = []
 
-        for orig, prep in zip(self.full_results, prep_data):
+        for idx, (orig, prep) in enumerate(zip(self.full_results, prep_data)):
             if selected_country != "Todos" and prep.get("country") != selected_country:
                 continue
             if search_text:
@@ -1034,6 +1251,7 @@ class MainWindow(QMainWindow):
                 if search_text not in combined_text:
                     continue
             filtered.append(orig)
+            indices.append(idx)
 
         if selected_country != "Todos":
             filters_applied.append(f"Pais: {selected_country}")
@@ -1041,61 +1259,78 @@ class MainWindow(QMainWindow):
             filters_applied.append(f"Busqueda: \"{self.search_entry.text().strip()}\"")
 
         filter_desc = "; ".join(filters_applied) if filters_applied else None
+        return filtered, indices, filter_desc
+
+    def _get_filtered_results(self):
+        """Return (filtered_results, filter_description_string) based on current filter widgets."""
+        filtered, _, filter_desc = self._compute_filtered()
         return filtered, filter_desc
+
+    def _selected_ips(self) -> List[str]:
+        """IPs de las filas seleccionadas hoy (para preservar la selección al refiltrar)."""
+        selection = self.table.selectionModel()
+        if selection is None:
+            return []
+        ips = []
+        for index in sorted(selection.selectedRows(), key=lambda i: i.row()):
+            item = self.table.item(index.row(), 1)
+            if item:
+                ips.append(item.text())
+        return ips
+
+    def _restore_selection(self, ips: List[str]):
+        if not ips:
+            return
+        selection = self.table.selectionModel()
+        if selection is None:
+            return
+        wanted = set(ips)
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 1)
+            if item and item.text() in wanted:
+                index = self.table.model().index(row, 0)
+                selection.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
 
     def _get_selected_results(self):
         """Return (selected_results, count) from table row selections."""
-        selected_rows = set()
-        for idx in self.table.selectionModel().selectedRows():
-            selected_rows.add(idx.row())
-
-        if not selected_rows:
+        selection = self.table.selectionModel()
+        if selection is None:
             return [], 0
 
-        prep_data = file_io._prepare_export_data(self.full_results)
+        rows = sorted(index.row() for index in selection.selectedRows())
+        if not rows:
+            return [], 0
+
+        # Cada fila se resuelve contra la lista visible (no contra el índice mostrado),
+        # de modo que el mapeo es correcto también con filtros activos.
         selected = []
-        for row_num in selected_rows:
-            n_item = self.table.item(row_num, 0)
-            if n_item:
-                try:
-                    idx = int(n_item.text()) - 1
-                    if 0 <= idx < len(self.full_results):
-                        selected.append(self.full_results[idx])
-                except (ValueError, TypeError):
-                    pass
+        for row in rows:
+            if 0 <= row < len(self.visible_indices):
+                global_idx = self.visible_indices[row]
+                if 0 <= global_idx < len(self.full_results):
+                    selected.append(self.full_results[global_idx])
 
         return selected, len(selected)
 
+    def _on_search_text_changed(self, _text: str):
+        self._search_timer.start()
+
     def _filter_table(self):
-        search_text = self.search_entry.text().lower().strip()
-        selected_country = self.country_combo.currentText()
-
-        prep_data = file_io._prepare_export_data(self.full_results)
-        filtered = []
-
-        for orig, prep in zip(self.full_results, prep_data):
-            if selected_country != "Todos" and prep.get("country") != selected_country:
-                continue
-
-            if search_text:
-                combined_text = " ".join([
-                    str(prep.get("ip_address", "")),
-                    str(prep.get("isp", "")),
-                    str(prep.get("location", "")),
-                    str(prep.get("hostname", "")),
-                    str(prep.get("timestamp_utc", "")),
-                    str(prep.get("timestamp_converted", ""))
-                ]).lower()
-                if search_text not in combined_text:
-                    continue
-
-            filtered.append(orig)
+        filtered, indices, _ = self._compute_filtered()
+        selected_ips = self._selected_ips()
 
         self.lbl_result_count.setText(f"Resultados: {len(filtered)} IPs")
-        self._populate_table(filtered)
+        self._populate_table(filtered, indices)
+        self._restore_selection(selected_ips)
 
     def _clear_all(self):
+        if self._is_running:
+            QMessageBox.information(self, "Analisis en curso", "No se puede limpiar mientras el analisis se ejecuta.")
+            return
+
         self.full_results = []
+        self.visible_results = []
+        self.visible_indices = []
         self.analysis_metadata = {}
         self.selected_file = None
         self.table.setRowCount(0)
@@ -1112,7 +1347,7 @@ class MainWindow(QMainWindow):
         self.card_countries.set_value("0")
         self.card_private.set_value("0")
 
-        self.drop_area.icon_label.setPixmap(ICONS['folder_open'])
+        self.drop_area.icon_label.setPixmap(ICONS['folder_open'].pixmap(48, 48))
         self.drop_area.label.setText("Arrastre y suelte su archivo aqui (.txt, .log, .csv, .docx)<br><span style='font-size: 11px; color: #64748B;'>o haga clic en 'Seleccionar Archivo'</span>")
         self.drop_area.reset_style()
         self.status_bar.showMessage("Listo para iniciar un nuevo analisis.")
@@ -1128,7 +1363,8 @@ class MainWindow(QMainWindow):
 
         has_filters = filter_desc is not None
         has_selection = sel_count > 0
-        is_filtered_view = has_filters and filt_count < total
+        # Basta con que haya un filtro activo (aunque deje todo visible) para ofrecerlo.
+        is_filtered_view = has_filters
 
         if is_filtered_view or has_selection:
             options = []
@@ -1223,8 +1459,8 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         QMessageBox.about(
             self,
-            "Acerca de IP Analyzer",
-            "<h3>IP Analyzer v2.2</h3>"
+            f"Acerca de {APP_NAME}",
+            f"<h3>{APP_FULL_VERSION}</h3>"
             "<p>Herramienta avanzada para la extraccion determinista, geolocalizacion y analisis forense de direcciones IP en documentos y registros de red.</p>"
             "<p><b>Caracteristicas clave:</b></p>"
             "<ul>"
@@ -1237,11 +1473,69 @@ class MainWindow(QMainWindow):
             "<p><b>Desarrollado por:</b> Diego A. Rabalo</p>"
         )
 
+    def closeEvent(self, event):
+        """Evita destruir el QThread en ejecución (abortaría el proceso)."""
+        running = (
+            self._is_running
+            and self.worker_thread is not None
+            and self.worker_thread.isRunning()
+        )
+        if not running:
+            event.accept()
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Analisis en curso",
+            "Hay un analisis en ejecucion.\n\n"
+            "Desea cancelarlo y salir de la aplicacion?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            event.ignore()
+            return
+
+        if self.cancel_event is not None:
+            self.cancel_event.set()
+        self.worker_thread.quit()
+        if not self.worker_thread.wait(8000):
+            logger.warning("El worker de analisis no finalizo al cerrar: se reintenta el cierre.")
+            QMessageBox.information(
+                self,
+                "Cierre pendiente",
+                "El analisis aun esta finalizando una consulta de red.\n"
+                "Cierre la ventana nuevamente en unos segundos.",
+            )
+            event.ignore()
+            return
+        event.accept()
+
+
+def _app_icon_path():
+    """Ruta al icono de la aplicación (compatible con ejecución empaquetada)."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        bundle = getattr(sys, "_MEIPASS", None)
+        if bundle:
+            candidates.append(Path(bundle) / "assets" / "app_icon.png")
+        candidates.append(Path(sys.executable).resolve().parent / "assets" / "app_icon.png")
+    here = Path(__file__).resolve().parent
+    candidates.append(here.parent / "assets" / "app_icon.png")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
 
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    init_icons()
+    icon_path = _app_icon_path()
+    if icon_path is not None:
+        app.setWindowIcon(QIcon(str(icon_path)))
+    if not init_icons():
+        sys.exit(1)
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

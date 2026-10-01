@@ -68,6 +68,14 @@ N    | IP Address                       | Timestamp (UTC)         | Timestamp (U
 
 ## Instalacion y Configuracion
 
+### Instalacion con Ejecutable (Windows)
+Descarga desde la [pagina de releases](https://github.com/mikear/IP-Analyzer/releases):
+
+- **Instalador (recomendado):** ejecuta `IP-Analyzer-Setup-v2.2.0-win64.exe`, pulsa *Instalar* y listo. Se instala solo para el usuario actual (no pide administrador). Crea accesos directos en el Menu Inicio y, si lo deseas, en el escritorio. Para desinstalar: **Panel de Control > Programas**, el acceso directo *Desinstalar IP Analyzer*, o `unins000.exe` dentro de la carpeta de instalacion. La desinstalacion cierra la aplicacion si esta abierta y elimina todos los archivos.
+- **Portable:** descomprime `IP-Analyzer-2.2.0-win64-portable.zip` en cualquier carpeta y ejecuta `IP-Analyzer.exe`. No instala nada ni registra entradas.
+
+En ambos casos la aplicacion funciona sin token (modo local); para geolocalizacion/ISP anade tu token (ver mas abajo).
+
 ### Instalacion desde Codigo Fuente
 1. **Clonar repositorio:**
    ```bash
@@ -92,10 +100,17 @@ N    | IP Address                       | Timestamp (UTC)         | Timestamp (U
 ### Configuracion del Token (IPInfo API)
 Para habilitar el enriquecimiento de geolocalizacion e ISP:
 - Inicia la interfaz grafica e ingresa tu token desde el menu **`Archivo > Gestionar Token IPInfo...`**.
-- O bien, crea un archivo `.env` en el directorio `src/`:
+- O bien, crea un archivo `.env` con:
   ```env
   IPINFO_TOKEN=tu_token_aqui
   ```
+  La ubicacion segun como uses la herramienta:
+
+  | Modo | Ruta del `.env` |
+  |---|---|
+  | Codigo fuente | `src/.env` |
+  | Instalado con el setup | `%APPDATA%\IP-Analyzer\.env` |
+  | Portable | junto a `IP-Analyzer.exe` |
 
 ---
 
@@ -108,15 +123,21 @@ python src/ip_analyzer_gui.py
 1. Arrastra tu archivo al panel de entrada o usa el boton **"Seleccionar Archivo"**.
 2. Selecciona la zona horaria de conversion.
 3. (Opcional) Ingresa metadatos del caso (Investigador, Juzgado/Fiscalia, Causa).
-4. Haz clic en **"Iniciar Analisis"**.
-5. Examina los resultados, busca por coincidencia o filtra por pais.
-6. Exporta el reporte legal desde `Archivo > Exportar Informe...` (PDF, CSV, JSON, TXT).
+4. Haz clic en **"Iniciar Analisis"**. Puedes cancelarlo en cualquier momento con **"Cancelar"**.
+5. Examina los resultados, busca por coincidencia o filtra por pais (el boton **"Mostrar Log"** abre la consola de ejecucion).
+6. Exporta el reporte legal desde `Archivo > Exportar Informe...` (PDF, CSV, JSON, TXT), con opcion de exportar todos, solo los filtrados o solo los seleccionados.
 
 ### Linea de Comandos (CLI)
 Ideal para integracion en scripts o analisis masivo:
 ```bash
 python src/main_cli.py "C:\evidencia\log_auditoria.txt" -o "C:\informes\reporte_caso123" -tz "America/Argentina/Buenos_Aires" -m "Investigador=Diego Rabalo" -m "Causa=123/2025"
 ```
+
+Notas:
+- `-m` acepta `clave=valor` (con o sin comillas) y se puede repetir.
+- `-tz` se valida antes de analizar: una zona inexistente termina con error sin llamar a la API.
+- El CSV incluye los metadatos del caso como lineas `#` antes del encabezado; para leerlo con pandas usa `pandas.read_csv(ruta, comment='#')`.
+- Las fechas `DD/MM/AAAA` se interpretan como dia primero (formato por defecto de los informes); si dia y mes son ambiguos se emite un aviso en el log.
 
 ---
 
