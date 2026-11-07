@@ -1,0 +1,79 @@
+name: Bug report
+description: Something does not work as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Before continuing, check the [documentation](https://github.com/mikear/IP-Analyzer#quick-start)
+        and search existing issues.
+
+        Do not paste API keys, case data, or personal information.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where does it happen?
+      options:
+        - GUI (PySide6)
+        - CLI (main_cli.py)
+        - Extraction (IPv4/IPv6)
+        - Timezone conversion
+        - ipinfo enrichment
+        - Export (PDF/CSV/JSON/TXT)
+        - Packaging / installer
+        - Documentation
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: IP Analyzer version
+      description: "`APP_VERSION` in src/ip_analyzer_gui.py or the About dialog."
+      placeholder: "2.2.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1. Open IP Analyzer with ...
+        2. Analyze the file ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove secrets and personal data first.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this is not a duplicate
+        - label: I removed API keys, case data, and personal information
+    validations:
+      required: true

@@ -1,0 +1,7 @@
+IP Analyzer — third-party notices
+
+- Flag icons: SVG flags under assets/flags/ (public-domain / CC0 country data).
+- Fonts and icons: FontAwesome via qtawesome (MIT / OFL).
+- Qt / PySide6 (LGPL), fpdf2 (MIT), python-docx, python-dateutil, pytz, requests — see requirements.txt for versions.
+- ipinfo.io is a trademark of ipinfo.io. This project is not affiliated with ipinfo.io.
+- No AI services are used: extraction is 100% deterministic and local.

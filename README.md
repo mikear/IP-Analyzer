@@ -1,146 +1,214 @@
-# IP Analyzer v2.2
+<div align="center">
 
-![IP Analyzer Banner](assets/imagenes/banner-github.png)
+<img src="assets/app_icon.png" width="96" height="96" alt="IP Analyzer icon">
 
-[![Python Version](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-[![GUI Framework](https://img.shields.io/badge/GUI-PySide6--Qt-green.svg)](https://www.qt.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+# IP Analyzer
 
-**IP Analyzer** es una solucion profesional de escritorio y linea de comandos disenada para analistas de ciberseguridad, investigadores de fuentes abiertas (OSINT) y peritos forenses digitales.
+**Local-first IP extraction and forensic reporting for the desktop.**
 
-Permite la extraccion, analisis y geolocalizacion de direcciones IP y marcas de tiempo (timestamps) contenidas en registros de auditoria, logs de red y documentos no estructurados.
+Extract IPv4/IPv6 addresses and timestamps from logs, enrich them with geolocation and ISP data, convert any timezone, and export a legal-grade report with SHA256 chain of custody. 100% deterministic — no AI involved.
 
-El motor de analisis es **100% determinista, ultra rapido y de procesamiento local**, garantizando privacidad absoluta de los datos analizados sin dependencia de APIs de IA externas.
+<a href="https://github.com/mikear/IP-Analyzer/releases/latest"><img src="https://img.shields.io/badge/Download_latest-14b8a6?style=for-the-badge&logo=github&logoColor=white" alt="Download the latest release"></a>
+<a href="README.es.md"><img src="https://img.shields.io/badge/Espa%C3%B1ol-181717?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Read in Spanish"></a>
 
----
+<br>
 
-## Caracteristicas Destacadas
+[![Release](https://img.shields.io/github/v/release/mikear/IP-Analyzer?style=flat-square&label=release)](https://github.com/mikear/IP-Analyzer/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/mikear/IP-Analyzer/total?style=flat-square&label=downloads)](https://github.com/mikear/IP-Analyzer/releases/latest)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square)](https://www.python.org/)
+[![GUI](https://img.shields.io/badge/GUI-PySide6--Qt-green?style=flat-square)](https://www.qt.io/)
+[![License](https://img.shields.io/badge/license-MIT-14b8a6?style=flat-square)](LICENSE)
+[![Local-first](https://img.shields.io/badge/local--first-no%20telemetry-14b8a6?style=flat-square)](#data-and-privacy)
 
-- **Extraccion Local Determinista Rapida:** Algoritmo de parseo que identifica direcciones IP (IPv4 e IPv6) y sus marcas de tiempo asociadas en archivos `.txt`, `.log`, `.csv` y `.docx`.
-- **Geolocalizacion e ISP:** Enriquecimiento de datos con `ipinfo.io` (ciudad, region, pais, ISP y hostname). Capaz de operar en modo offline sin token.
-- **Conversion Universal de Zonas Horarias:** Convierte automaticamente cualquier timestamp al huso horario solicitado (UTC, UTC-3, etc.).
-- **Exportacion Flexible con Filtros:** Exporta el reporte legal en tres modos:
-  - **Todos:** Exporta el conjunto completo de resultados.
-  - **Filtrados:** Exporta solo los registros que coinciden con los filtros activos (busqueda por texto y/o pais).
-  - **Seleccionados:** Exporta unicamente las filas seleccionadas manualmente en la tabla.
-  - Soporta formatos `.pdf`, `.csv`, `.json` y `.txt` con metadatos del caso (investigador, juzgado/fiscalia, causa/referencia), rango de exportacion y hash **SHA256** del archivo original para mantener la cadena de custodia de evidencia digital.
-- **Interfaz Grafica Moderna (PySide6 / Qt):**
-  - Area **Drag & Drop** para arrastrar archivos directamente.
-  - Busqueda global y filtrado interactivo en tiempo real por pais.
-  - Contador de resultados visible al filtrar.
-  - Ejecucion asincrona multihilo (`QThread`) para mantener la fluidez de la interfaz.
-  - Consola de logs integrada y barra de progreso.
-  - Iconos FontAwesome via `qtawesome` para una interfaz profesional y consistente.
+<a href="assets/screenshots/03-analysis-results.png" title="Open the full screenshot"><img src="assets/screenshots/03-analysis-results.png" alt="IP Analyzer analyzing 200 IPs with geolocation and ISP" width="760"></a>
+
+**Windows x64** · **~120 MB** · **No admin required** · **Works offline** · **MIT**
+
+[Download](#download) · [Screenshots](#screenshots) · [How it works](#how-it-works) · [Documentation](README.es.md) · [Español](README.es.md)
+
+</div>
 
 ---
 
-## Capturas de Pantalla
+## Contents
 
-![IP Analyzer - Analisis de 200 IPs con geolocalizacion y ISP](assets/screenshots/03-analysis-results.png)
+- [Download](#download)
+- [Why IP Analyzer](#why-ip-analyzer)
+- [How it works](#how-it-works)
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Quick start](#quick-start)
+- [Data and privacy](#data-and-privacy)
+- [Build from source](#build-from-source)
+- [Roadmap](#roadmap)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Security](#security)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
 
----
+## Download
 
-## Ejemplo de Informe Generado
+**No admin rights required.** The installer is per-user; the portable build installs nothing.
 
-```text
-====================================================================================================================================================================================
-                                                                INFORME DE ANALISIS DE IPs Y ISPs
-====================================================================================================================================================================================
+| Platform | Installer | Portable |
+|---|---|---|
+| Windows x64 | [Setup `.exe`](https://github.com/mikear/IP-Analyzer/releases/latest/download/IP-Analyzer-Setup-v2.2.0-win64.exe) | [ZIP](https://github.com/mikear/IP-Analyzer/releases/latest/download/IP-Analyzer-2.2.0-win64-portable.zip) · [CLI](https://github.com/mikear/IP-Analyzer/releases/latest/download/ip-analyzer-cli.exe) |
 
---- Datos del Caso ---
-SHA256 del Archivo de Entrada: 8a7f92b3c...1e902
-Version de la Aplicacion:      IP Analyzer v2.2
-Archivo Origen:                unstructured_log.txt
-Investigador:                  Lic. Diego A. Rabalo
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+[SHA256 checksums](https://github.com/mikear/IP-Analyzer/releases/latest/download/SHA256SUMS.txt) · [All releases](https://github.com/mikear/IP-Analyzer/releases)
 
-                                                                      Resultados (Zona Horaria Aplicada: UTC)
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-N    | IP Address                       | Timestamp (UTC)         | Timestamp (UTC)              | ISP / Error              | Ubicacion                 | Hostname
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- 1   | 202.216.224.15                   | 2024-08-21 11:30:00 UTC | 2024-08-21 11:30:00 UTC+0000 | FreeBit Co.,Ltd.         | Tokyo, Tokyo, JP          | nsc05.dti.ad.jp
- 2   | 185.220.101.5                    | 2024-08-21 12:15:00 UTC | 2024-08-21 12:15:00 UTC+0000 | M247 Europe SRL          | Bucharest, RO             | tor-exit-node.m247.com
- 3   | 101.160.0.1                      | 2024-08-21 14:45:00 UTC | 2024-08-21 14:45:00 UTC+0000 | Telstra Limited          | Townsville, AU            | cpe-101-160-0-1.bpjl...
-====================================================================================================================================================================================
+- **Windows 10/11 x64.** Uninstall from Settings > Apps or `unins000.exe` — the uninstaller kills the app and leaves zero files.
+- The v2.2 builds are not code-signed; SmartScreen may ask for confirmation.
+- Without a token, IP Analyzer runs **offline in local mode** (extraction + timestamps only).
+
+## Why IP Analyzer
+
+- **Local-first:** case metadata and your token stay on your machine. Only enrichment calls go to ipinfo.io, and only when you run an analysis.
+- **Deterministic:** regex + `ipaddress` parsing, no AI, no cloud. Same input → same result, every time.
+- **Forensic-ready:** SHA256 of the source file, app version, case metadata (investigator, court/prosecutor, case number), and export-range tracking in every report.
+- **Flexible exports:** PDF, CSV (`utf-8-sig` with `#` metadata), JSON, and TXT — all, filtered-only, or selected-only.
+- **No lock-in:** your CSVs open in pandas with `pandas.read_csv(ruta, comment='#')`, and you can rebuild from source under MIT.
+
+**At a glance:** IPv4/IPv6 · CLF + ISO + syslog timestamps · universal timezone conversion · GUI + CLI · 4 export formats.
+
+## How it works
+
+```
+Unstructured logs (.txt/.log/.csv/.docx)
+  └─> Deterministic extraction (IPv4/IPv6 + timestamps)
+  └─> ipinfo.io enrichment (city, region, country, ISP, hostname)
+  └─> Timezone conversion (zoneinfo, pytz fallback)
+  └─> Forensic report (PDF/CSV/JSON/TXT + SHA256)
 ```
 
----
+1. **Drop your file** — unstructured audit logs are fine.
+2. **Pick a timezone** — any timestamp is converted to it (`UTC`, `UTC-3`, `America/Argentina/Buenos_Aires`, …).
+3. **(Optional) Add case metadata** — investigator, court/prosecutor, case reference.
+4. **Run the analysis** — cancel any time; cancellation is noted in the report metadata.
+5. **Filter & export** — search by text or country, then export all / filtered / selected.
 
-## Instalacion y Configuracion
+## Features
 
-### Instalacion con Ejecutable (Windows)
-Descarga desde la [pagina de releases](https://github.com/mikear/IP-Analyzer/releases):
+| Area | What you get |
+|---|---|
+| Extraction | IPv4 and IPv6 (full, no truncation), ISO, `DD/MM/YYYY`, CLF Apache, syslog timestamps; de-duplicated `(ip, ts)` pairs |
+| Enrichment | ipinfo.io: city, region, country, ISP, hostname; private/loopback/link-local skipped without API calls; 3 retries with backoff, error caching |
+| Timezone | `zoneinfo` first, `pytz` fallback; naive timestamps assumed UTC; day-first `DD/MM/YYYY` with ambiguity warning |
+| GUI | PySide6/Qt drag & drop, `QThread` async analysis, KPI cards (total/ISPs/countries/private), live log, progress bar, country filter with debounce, FontAwesome icons |
+| CLI | `main_cli.py <file> -o <out> -tz <zone> -m "Key=Value"` (repeatable), fails fast on invalid timezone |
+| Reports | Case metadata, source SHA256, applied timezone; CSV keeps `#` metadata lines; PDF is latin-1 landscape with footer and page numbers |
 
-- **Instalador (recomendado):** ejecuta `IP-Analyzer-Setup-v2.2.0-win64.exe`, pulsa *Instalar* y listo. Se instala solo para el usuario actual (no pide administrador). Crea accesos directos en el Menu Inicio y, si lo deseas, en el escritorio. Para desinstalar: **Panel de Control > Programas**, el acceso directo *Desinstalar IP Analyzer*, o `unins000.exe` dentro de la carpeta de instalacion. La desinstalacion cierra la aplicacion si esta abierta y elimina todos los archivos.
-- **Portable:** descomprime `IP-Analyzer-2.2.0-win64-portable.zip` en cualquier carpeta y ejecuta `IP-Analyzer.exe`. No instala nada ni registra entradas.
+## Screenshots
 
-En ambos casos la aplicacion funciona sin token (modo local); para geolocalizacion/ISP anade tu token (ver mas abajo).
+Analysis of 200 IPs with geolocation and ISP
 
-### Instalacion desde Codigo Fuente
-1. **Clonar repositorio:**
-   ```bash
-   git clone https://github.com/mikear/IP-Analyzer.git
-   cd IP-Analyzer
-   ```
+[![Analysis results](assets/screenshots/03-analysis-results.png)](assets/screenshots/03-analysis-results.png)
 
-2. **Crear entorno virtual:**
-   ```bash
-   python -m venv venv
-   # En Windows:
-   .\venv\Scripts\activate
-   # En Linux/macOS:
-   source venv/bin/activate
-   ```
+## Quick start
 
-3. **Instalar dependencias:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### GUI
 
-### Configuracion del Token (IPInfo API)
-Para habilitar el enriquecimiento de geolocalizacion e ISP:
-- Inicia la interfaz grafica e ingresa tu token desde el menu **`Archivo > Gestionar Token IPInfo...`**.
-- O bien, crea un archivo `.env` con:
-  ```env
-  IPINFO_TOKEN=tu_token_aqui
-  ```
-  La ubicacion segun como uses la herramienta:
-
-  | Modo | Ruta del `.env` |
-  |---|---|
-  | Codigo fuente | `src/.env` |
-  | Instalado con el setup | `%APPDATA%\IP-Analyzer\.env` |
-  | Portable | junto a `IP-Analyzer.exe` |
-
----
-
-## Modo de Uso
-
-### Interfaz Grafica (GUI)
 ```bash
 python src/ip_analyzer_gui.py
 ```
-1. Arrastra tu archivo al panel de entrada o usa el boton **"Seleccionar Archivo"**.
-2. Selecciona la zona horaria de conversion.
-3. (Opcional) Ingresa metadatos del caso (Investigador, Juzgado/Fiscalia, Causa).
-4. Haz clic en **"Iniciar Analisis"**. Puedes cancelarlo en cualquier momento con **"Cancelar"**.
-5. Examina los resultados, busca por coincidencia o filtra por pais (el boton **"Mostrar Log"** abre la consola de ejecucion).
-6. Exporta el reporte legal desde `Archivo > Exportar Informe...` (PDF, CSV, JSON, TXT), con opcion de exportar todos, solo los filtrados o solo los seleccionados.
 
-### Linea de Comandos (CLI)
-Ideal para integracion en scripts o analisis masivo:
+1. Drag your file onto the input panel or use **Select File**.
+2. Choose the conversion timezone.
+3. (Optional) Enter case metadata.
+4. **Start Analysis**. Cancel any time with **Cancel**.
+5. Browse results, search, or filter by country (see **Show Log** for the execution console).
+6. Export from **File > Export Report...** (PDF, CSV, JSON, TXT) — all, filtered, or selected only.
+
+### CLI
+
 ```bash
-python src/main_cli.py "C:\evidencia\log_auditoria.txt" -o "C:\informes\reporte_caso123" -tz "America/Argentina/Buenos_Aires" -m "Investigador=Diego Rabalo" -m "Causa=123/2025"
+python src/main_cli.py "C:\evidence\audit_log.txt" -o "C:\reports\case123" -tz "America/Argentina/Buenos_Aires" -m "Investigator=Diego Rabalo" -m "Case=123/2025"
 ```
 
-Notas:
-- `-m` acepta `clave=valor` (con o sin comillas) y se puede repetir.
-- `-tz` se valida antes de analizar: una zona inexistente termina con error sin llamar a la API.
-- El CSV incluye los metadatos del caso como lineas `#` antes del encabezado; para leerlo con pandas usa `pandas.read_csv(ruta, comment='#')`.
-- Las fechas `DD/MM/AAAA` se interpretan como dia primero (formato por defecto de los informes); si dia y mes son ambiguos se emite un aviso en el log.
+Notes:
 
----
+- `-m` accepts `key=value` (quoted or not) and can be repeated.
+- `-tz` is validated before analysis: an invalid zone exits with an error without calling the API.
+- The CSV includes case metadata as `#` lines; read it with `pandas.read_csv(path, comment='#')`.
+- `DD/MM/YYYY` dates are day-first; ambiguous day/month values log a warning.
 
-## Licencia y Creditos
-- Licencia MIT.
-- Desarrollado por **Diego A. Rabalo** ([LinkedIn](https://www.linkedin.com/in/rabalo)).
+### Token (IPInfo API)
+
+Enrichment needs a token — or just run local-only:
+
+- In the GUI: **File > Manage IPInfo Token...**
+- Or create a `.env` with `IPINFO_TOKEN=your_token_here`:
+
+| Mode | `.env` location |
+|---|---|
+| Source | `src/.env` |
+| Installed (setup) | `%APPDATA%\IP-Analyzer\.env` |
+| Portable | next to `IP-Analyzer.exe` |
+
+## Data and privacy
+
+- Input files are read locally; extracted pairs never leave your machine except for the ipinfo.io call you trigger.
+- Your token is stored in `.env` (mode-aware path above) via `python-dotenv` and never appears in logs.
+- The only network calls are ipinfo.io enrichment (and a token test against `8.8.8.8` from the dialog). No telemetry, no account.
+- Reports embed the source file SHA256 for chain of custody — keep the original and the report together. See [DISCLAIMER.md](DISCLAIMER.md).
+
+## Build from source
+
+Requirements: Python 3.10+ and `pip install -r requirements.txt`.
+
+```bash
+python -m venv venv
+.\venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+python -m compileall src scripts
+```
+
+Build the release (GUI + CLI + zip + Inno installer + checksums):
+
+```bash
+python scripts/build_release.py
+python scripts/build_release.py --skip-gui --skip-cli   # fast: only zip + installer + checksums
+```
+
+The version lives in `APP_VERSION` in `src/ip_analyzer_gui.py` (`"2.2"` → `2.2.0`) — bump it there, never in the script.
+
+## Roadmap
+
+- Code signing on Windows.
+- Additional timestamp formats on demand.
+- Faster batch enrichment and partial-export summaries.
+
+Have a use case that is missing? Open a [discussion](https://github.com/mikear/IP-Analyzer/discussions) or an [issue](https://github.com/mikear/IP-Analyzer/issues).
+
+## Documentation
+
+- [README.es.md](README.es.md) — full Spanish documentation (same content)
+- [LEEME.txt](LEEME.txt) — Spanish quick-start summary
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) — release notes
+- [DISCLAIMER.md](DISCLAIMER.md) — authorized use and data source notices
+
+## Contributing
+
+Contributions are welcome: bug reports, timestamp-format ideas, UI improvements, translations, and documentation fixes.
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Use the [bug report](https://github.com/mikear/IP-Analyzer/issues/new?template=bug_report.yml) or [feature request](https://github.com/mikear/IP-Analyzer/issues/new?template=feature_request.yml) templates.
+- Never open a public issue for a vulnerability; see [SECURITY.md](SECURITY.md).
+
+## Security
+
+IP Analyzer is a defensive tool for authorized security work. Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/mikear/IP-Analyzer/security/advisories/new) and read [SECURITY.md](SECURITY.md) for scope and response times.
+
+## Acknowledgements
+
+- ipinfo.io for geolocation and ISP data.
+- Qt / PySide6, fpdf2, python-docx, python-dateutil, and pytz.
+- Third-party notices are listed in [NOTICE](NOTICE).
+
+## License
+
+MIT — see [LICENSE](LICENSE). IP Analyzer is intended for authorized security professionals.
+
+If IP Analyzer is useful, a star helps others find it.
+
+[![Star IP Analyzer](https://img.shields.io/github/stars/mikear/IP-Analyzer?style=social)](https://github.com/mikear/IP-Analyzer)

@@ -1,0 +1,41 @@
+================================================================
+  IP ANALYZER v2.2.0
+================================================================
+
+Herramienta de escritorio y CLI para extraccion, analisis y
+geolocalizacion de IPs y timestamps en logs. 100% determinista y
+local, sin IA. Ideal para forense, seguridad y OSINT.
+
+DESCARGA
+  https://github.com/mikear/IP-Analyzer/releases/latest
+
+  Windows x64 ..... IP-Analyzer-Setup-v2.2.0-win64.exe (instalador)
+                    IP-Analyzer-2.2.0-win64-portable.zip (portable)
+                    ip-analyzer-cli.exe (CLI)
+
+  Instalador per-user sin administrador. Portable sin instalacion.
+  Los ejecutables no estan firmados; SmartScreen puede pedir
+  confirmacion. Sin token funciona en modo local.
+
+REQUISITOS
+  - Windows 10/11 x64
+  - Token opcional de ipinfo.io para geolocalizacion/ISP
+    (Archivo > Gestionar Token IPInfo... o src/.env)
+
+ARRANQUE RAPIDO
+  1. Abre IP-Analyzer.exe y arrastra tu archivo (.txt/.log/.csv/.docx).
+  2. Elige zona horaria e (opcional) metadatos del caso.
+  3. Iniciar Analisis, filtra por texto/pais y exporta (PDF/CSV/JSON/TXT).
+
+  CLI:
+    python src/main_cli.py log.txt -o informe -tz "America/Argentina/Buenos_Aires" -m "Causa=123/2025"
+
+QUE ENCONTRARAS
+  README.md / README.es.md .. documentacion bilingue
+  src/ ..................... codigo fuente (PySide6/Qt + CLI)
+  scripts/ ................. build de release e instalador Inno Setup
+  registros_ips_demo.txt ... archivo demo para probar sin token
+
+PRIMEROS PASOS
+  Lee README.es.md (o README.md en ingles) para instalacion,
+  token y notas de uso. Ver SECURITY.md para reportar fallos.
